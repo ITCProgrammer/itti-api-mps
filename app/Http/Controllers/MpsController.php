@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use \DateTime;
 
 class MpsController extends Controller
 {
@@ -17,20 +18,115 @@ class MpsController extends Controller
         ]);
     }
 
+    // public function index()
+    // {
+    //     $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
+
+    //     $dataDB2 = DB::connection('DB2')->select("
+    //         SELECT
+    //             KDMC,
+    //             PRODUCTIONDEMANDCODE,
+    //             STATUSMESIN,
+    //             TGL_START,
+    //             TGLDELIVERY,
+    //             ESTIMASI_SELESAI,
+    //             SUBCODE01,
+    //             SUBCODE02,
+    //             SUBCODE03,
+    //             SUBCODE04
+    //         FROM ITXTEMP_SCHEDULE_KNT
+    //     ");
+
+    //     return response()->json([
+    //         'status' => true,
+    //         'message' => 'Succes',
+    //         'dataMesin' => $dataMesin,
+    //         'dataNow' => $dataDB2,
+    //         'test' => 'test'
+    //     ]);
+    // }
+
     public function index()
     {
         $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
 
-        $dataDB2 = DB::connection('DB2')->select("SELECT KDMC, PRODUCTIONDEMANDCODE, STATUSMESIN, ESTIMASI_SELESAI FROM ITXTEMP_SCHEDULE_KNT");
+        $dataDB2 = DB::connection('DB2')->select("
+            SELECT
+                KDMC,
+                PRODUCTIONDEMANDCODE,
+                STATUSMESIN,
+                TGL_START,
+                TGLMULAI,
+                TGLDELIVERY,
+                ESTIMASI_SELESAI,
+                SUBCODE01,
+                SUBCODE02,
+                SUBCODE03,
+                SUBCODE04
+            FROM ITXTEMP_SCHEDULE_KNT
+            WHERE ESTIMASI_SELESAI IS NOT NULL
+        ");
 
+        // Group berdasarkan mesin
+        $grouped = [];
+        foreach ($dataDB2 as $row) {
+            $kdmc = $row->kdmc;
+            if (!isset($grouped[$kdmc])) {
+                $grouped[$kdmc] = [];
+            }
+
+            $grouped[$kdmc][] = $row;
+        }
+
+        $finalData = [];
+         foreach ($grouped as $kdmc => $rows) {
+    usort($rows, function ($a, $b) {
+        $aDate = $a->tglmulai ?? $a->tgl_start ?? $a->estimasi_selesai;
+        $bDate = $b->tglmulai ?? $b->tgl_start ?? $b->estimasi_selesai;
+        return strtotime($aDate) <=> strtotime($bDate);
+    });
+
+    $lastEstimasi = null;
+
+    foreach ($rows as $row) {
+        // Ambil tanggal mulai: prioritas ke tglmulai
+        $rawStartStr = $row->tglmulai ?? $row->tgl_start;
+        $rawStart = $rawStartStr ? new DateTime($rawStartStr) : null;
+        $est = new DateTime($row->estimasi_selesai);
+
+        if (!$rawStart || ($lastEstimasi && $rawStart <= $lastEstimasi)) {
+            $start = $lastEstimasi ? (clone $lastEstimasi)->modify('+1 day') : new DateTime();
+            $durasi = max(1, $est->diff($rawStart ?? new DateTime())->days);
+            $est = (clone $start)->modify("+$durasi days");
+        } else {
+            $start = $rawStart;
+        }
+
+        $lastEstimasi = clone $est;
+
+        $finalData[] = (object)[
+            'kdmc' => $row->kdmc,
+            'productiondemandcode' => $row->productiondemandcode,
+            'statusmesin' => $row->statusmesin,
+            'tgl_start' => $start->format('Y-m-d'),
+            'estimasi_selesai' => $est->format('Y-m-d'),
+            'tgl_delivery' => $row->tgldelivery,
+            'tgl_mulai' => $row->tglmulai,
+            'subcode01' => $row->subcode01,
+            'subcode02' => $row->subcode02,
+            'subcode03' => $row->subcode03,
+            'subcode04' => $row->subcode04,
+        ];
+    }
+}
         return response()->json([
             'status' => true,
-            'message' => 'Succes',
+            'message' => 'Success',
             'dataMesin' => $dataMesin,
-            'dataNow' => $dataDB2,
-            'test' => 'test'
+            'dataNow' => $finalData,
         ]);
     }
+
 
     public function loadPoAndFor()
     {
