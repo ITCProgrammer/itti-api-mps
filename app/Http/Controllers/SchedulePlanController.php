@@ -105,6 +105,7 @@ class SchedulePlanController extends Controller
         ]);
 
         try {
+            DB::connection('DB2')->table('SCHEDULE_PLAN_MQM')->delete();
             Excel::import(new SchedulePlanImport, $request->file('excel_file'));
 
             return response()->json([
