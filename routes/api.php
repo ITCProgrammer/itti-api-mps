@@ -23,5 +23,4 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/import', [SchedulePlanController::class, 'import'])->name('import');
         Route::get('/data-detail', [SchedulePlanController::class, 'dataDetail'])->name('data.detail');
     });
-
 });
