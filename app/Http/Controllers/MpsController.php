@@ -349,151 +349,148 @@ class MpsController extends Controller
         }
 
         $placeholders = implode(',', array_fill(0, count($demand), '?'));
-        $query = "
-            WITH JML251 AS (
+        $query = "WITH JML251 AS (
+                    SELECT
+                        DEMANDCODE,
+                        COUNT(WEIGHTREALNET) AS JML,
+                        SUM(WEIGHTREALNET) AS JQTY
+                    FROM ELEMENTSINSPECTION
+                    WHERE ELEMENTITEMTYPECODE = 'KGF'
+                        AND COMPANYCODE = '100'
+                    GROUP BY DEMANDCODE
+                ),
+                JML25PM AS (
+                    SELECT
+                        DEMANDCODE,
+                        COUNT(WEIGHTREALNET) AS JML
+                    FROM ELEMENTSINSPECTION
+                    WHERE ELEMENTITEMTYPECODE = 'KGF' 
+                        AND QUALITYREASONCODE = 'PM'
+                        AND COMPANYCODE = '100'
+                    GROUP BY DEMANDCODE
+                ),
+                STDR AS (
+                    SELECT DISTINCT
+                        PRODUCT.SUBCODE02,
+                        PRODUCT.SUBCODE03,
+                        PRODUCT.SUBCODE04,
+                        (ADSTORAGE.VALUEDECIMAL * 24) AS STDRAJUT
+                    FROM DB2ADMIN.PRODUCT PRODUCT
+                    LEFT JOIN DB2ADMIN.ADSTORAGE ADSTORAGE ON PRODUCT.ABSUNIQUEID = ADSTORAGE.UNIQUEID
+                    WHERE 
+                        ADSTORAGE.NAMENAME = 'ProductionRate'
+                        AND PRODUCT.ITEMTYPECODE = 'KGF'
+                        AND PRODUCT.COMPANYCODE = '100'
+                ),
+                KGPAKAI AS (
+                        SELECT 
+                            PRODUCTIONRESERVATION.PRODUCTIONORDERCODE,
+                            SUM(PRODUCTIONRESERVATION.USEDBASEPRIMARYQUANTITY) AS KGPAKAI
+                        FROM DB2ADMIN.PRODUCTIONRESERVATION
+                        LEFT JOIN DB2ADMIN.FULLITEMKEYDECODER 
+                            ON PRODUCTIONRESERVATION.FULLITEMIDENTIFIER = FULLITEMKEYDECODER.IDENTIFIER
+                        GROUP BY PRODUCTIONRESERVATION.PRODUCTIONORDERCODE
+                    )
                 SELECT
-                    DEMANDCODE,
-                    COUNT(WEIGHTREALNET) AS JML,
-                    SUM(WEIGHTREALNET) AS JQTY
-                FROM ELEMENTSINSPECTION
-                WHERE ELEMENTITEMTYPECODE = 'KGF'
-                    AND COMPANYCODE = '100'
-                GROUP BY DEMANDCODE
-            ),
-            JML25PM AS (
-                SELECT
-                    DEMANDCODE,
-                    COUNT(WEIGHTREALNET) AS JML
-                FROM ELEMENTSINSPECTION
-                WHERE ELEMENTITEMTYPECODE = 'KGF' 
-                    AND QUALITYREASONCODE = 'PM'
-                    AND COMPANYCODE = '100'
-                GROUP BY DEMANDCODE
-            ),
-            STDR AS (
-		        SELECT DISTINCT
-		            PRODUCT.SUBCODE02,
-		            PRODUCT.SUBCODE03,
-		            PRODUCT.SUBCODE04,
-		            (ADSTORAGE.VALUEDECIMAL * 24) AS STDRAJUT
-		        FROM DB2ADMIN.PRODUCT PRODUCT
-		        LEFT JOIN DB2ADMIN.ADSTORAGE ADSTORAGE ON PRODUCT.ABSUNIQUEID = ADSTORAGE.UNIQUEID
-		        WHERE 
-		            ADSTORAGE.NAMENAME = 'ProductionRate'
-		            AND PRODUCT.ITEMTYPECODE = 'KGF'
-		            AND PRODUCT.COMPANYCODE = '100'
-		    ),
-            KGPAKAI AS (
-                    SELECT 
-                        PRODUCTIONRESERVATION.PRODUCTIONORDERCODE,
-                        SUM(PRODUCTIONRESERVATION.USEDBASEPRIMARYQUANTITY) AS KGPAKAI
-                    FROM DB2ADMIN.PRODUCTIONRESERVATION
-                    LEFT JOIN DB2ADMIN.FULLITEMKEYDECODER 
-                        ON PRODUCTIONRESERVATION.FULLITEMIDENTIFIER = FULLITEMKEYDECODER.IDENTIFIER
-                    GROUP BY PRODUCTIONRESERVATION.PRODUCTIONORDERCODE
-                )
-            SELECT
-                itx.CODE,
-                itx.PRODUCTIONORDERCODE,
-                itx.PROGRESSSTATUS,
-                itx.SUBCODE01,
-                itx.SUBCODE02,
-                itx.SUBCODE03,
-                itx.SUBCODE04,
-                TRIM(a2.VALUESTRING) AS StatusM,
-                COALESCE(a7.VALUEDATE, CURRENT_DATE) AS tgl_start,
-                a6.VALUEDATE AS tgl_delivery,
-                DATE(CURRENT_DATE) + 
-				    INT(
-				        (
-				            (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
-				            (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
-				            COALESCE(j251.JQTY, 0.00)
-				        ) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)
-				    ) DAYS AS ESTIMASI_SELESAI,
-                CAST(COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00) AS DECIMAL) AS QTY_ORDER,
-                CAST(
-                	(COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
-                	(COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
-                	COALESCE(j251.JQTY, 0.00)
-                	AS DECIMAL) AS QTY_SISA,
-                CASE 
-                    WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND COALESCE(pm.JML, 0) > 0 
-                        THEN 'Perbaikan Mesin'
-                    WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '2' 
-                        THEN 'Antri Mesin'
-                    WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '4' 
-                        THEN 'Habis Benang'
-                    WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '5' 
-                        THEN 'Tunggu Tes Quality'
-                    WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '3' 
-                        THEN 'Hold'
-                    WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '1' AND COALESCE(ROUND(KGPAKAI.KGPAKAI), 0) = 0 
-                        THEN 'Tunggu Pasang Benang'
-                    WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '1' AND COALESCE(ROUND(KGPAKAI.KGPAKAI), 0) > 0 AND COALESCE(j251.JML, 0) = 0
-                        THEN 'Tunggu Setting'
-                    WHEN (itx.PROGRESSSTATUS = '6' AND a.VALUESTRING = '1' AND COALESCE(j251.JML, 0) > 0)
-                        THEN 'Sedang Jalan Oper PO'
-                    WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) IN ('0', '1') AND COALESCE(j251.JML, 0) > 0
-                        THEN 'Sedang Jalan'
-                    WHEN COALESCE(itx.PRODUCTIONORDERCODE, '') = '' AND itx.CODE <> ''
-                        THEN 'Planned'
-                    WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '0' AND COALESCE(ROUND(KGPAKAI.KGPAKAI), 0) = 0
-                        THEN 'ProdOrdCreate'
-                    ELSE 'Tidak Ada PO'
-                END AS STATUSMESIN
-            FROM ITXVIEWKNTORDER itx
-            LEFT JOIN PRODUCTIONDEMAND p 
-              ON p.CODE = itx.CODE
-            LEFT JOIN ADSTORAGE a 
-              ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'StatusOper'
-            LEFT JOIN ADSTORAGE a2
-              ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'StatusMesin'
-            LEFT JOIN ADSTORAGE a3
-              ON a3.UNIQUEID = p.ABSUNIQUEID AND a3.FIELDNAME = 'QtySalin'
-            LEFT JOIN ADSTORAGE a4
-              ON a4.UNIQUEID = p.ABSUNIQUEID AND a4.FIELDNAME = 'QtyOperIn'
-            LEFT JOIN ADSTORAGE a5
-              ON a5.UNIQUEID = p.ABSUNIQUEID AND a5.FIELDNAME = 'QtyOperOut'
-            LEFT JOIN ADSTORAGE a6
-              ON a6.UNIQUEID = p.ABSUNIQUEID AND a6.FIELDNAME = 'RMPGreigeReqDateTo'
-            LEFT JOIN ADSTORAGE a7
-              ON a7.UNIQUEID = p.ABSUNIQUEID AND a7.FIELDNAME = 'TglRencana'
-            LEFT JOIN ELEMENTSINSPECTION e2
-              ON e2.DEMANDCODE = p.CODE AND e2.ELEMENTITEMTYPECODE = 'KGF' AND e2.COMPANYCODE = '100'
-            LEFT JOIN JML251 j251
-              ON j251.DEMANDCODE = itx.CODE
-            LEFT JOIN JML25PM pm
-              ON pm.DEMANDCODE = itx.CODE
-            LEFT JOIN KGPAKAI
-              ON KGPAKAI.PRODUCTIONORDERCODE = itx.PRODUCTIONORDERCODE
-            LEFT JOIN STDR
-              ON STDR.SUBCODE02 = itx.SUBCODE02 AND STDR.SUBCODE03 = itx.SUBCODE03 AND STDR.SUBCODE04 = itx.SUBCODE04
-            WHERE p.CODE IN ($placeholders)
-            GROUP BY
-              itx.CODE,
-              itx.PROGRESSSTATUS,
-              itx.PRODUCTIONORDERCODE,
-              itx.SUBCODE01,
-              itx.SUBCODE02,
-              itx.SUBCODE03,
-              itx.SUBCODE04,
-              p.ABSUNIQUEID,
-              a.VALUESTRING,
-              a2.VALUESTRING,
-              j251.JML,
-              j251.JQTY,
-              pm.JML,
-              a3.VALUEDECIMAL,
-              a4.VALUEDECIMAL,
-              a5.VALUEDECIMAL,
-              a6.VALUEDATE,
-              a7.VALUEDATE,
-              itx.BASEPRIMARYQUANTITY,
-              KGPAKAI.KGPAKAI,
-              STDR.STDRAJUT
-        ";
-        
+                    itx.CODE,
+                    itx.PRODUCTIONORDERCODE,
+                    itx.PROGRESSSTATUS,
+                    itx.SUBCODE01,
+                    itx.SUBCODE02,
+                    itx.SUBCODE03,
+                    itx.SUBCODE04,
+                    TRIM(a2.VALUESTRING) AS StatusM,
+                    COALESCE(a7.VALUEDATE, CURRENT_DATE) AS tgl_start,
+                    a6.VALUEDATE AS tgl_delivery,
+                    DATE(CURRENT_DATE) + 
+                        INT(
+                            (
+                                (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
+                                (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
+                                COALESCE(j251.JQTY, 0.00)
+                            ) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)
+                        ) DAYS AS ESTIMASI_SELESAI,
+                    CAST(COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00) AS DECIMAL) AS QTY_ORDER,
+                    CAST(
+                        (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
+                        (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
+                        COALESCE(j251.JQTY, 0.00)
+                        AS DECIMAL) AS QTY_SISA,
+                    CASE 
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND COALESCE(pm.JML, 0) > 0 
+                            THEN 'Perbaikan Mesin'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '2' 
+                            THEN 'Antri Mesin'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '4' 
+                            THEN 'Habis Benang'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '5' 
+                            THEN 'Tunggu Tes Quality'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '3' 
+                            THEN 'Hold'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '1' AND COALESCE(ROUND(KGPAKAI.KGPAKAI), 0) = 0 
+                            THEN 'Tunggu Pasang Benang'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '1' AND COALESCE(ROUND(KGPAKAI.KGPAKAI), 0) > 0 AND COALESCE(j251.JML, 0) = 0
+                            THEN 'Tunggu Setting'
+                        WHEN (itx.PROGRESSSTATUS = '6' AND a.VALUESTRING = '1' AND COALESCE(j251.JML, 0) > 0)
+                            THEN 'Sedang Jalan Oper PO'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) IN ('0', '1') AND COALESCE(j251.JML, 0) > 0
+                            THEN 'Sedang Jalan'
+                        WHEN COALESCE(itx.PRODUCTIONORDERCODE, '') = '' AND itx.CODE <> ''
+                            THEN 'Planned'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '0' AND COALESCE(ROUND(KGPAKAI.KGPAKAI), 0) = 0
+                            THEN 'ProdOrdCreate'
+                        ELSE 'Tidak Ada PO'
+                    END AS STATUSMESIN,
+                    CAST(a9.VALUEDECIMAL AS INT) || '''''X' || CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE_DIAMETER
+                FROM 
+                    ITXVIEWKNTORDER itx
+                LEFT JOIN PRODUCTIONDEMAND p ON p.CODE = itx.CODE
+                LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'StatusOper'
+                LEFT JOIN ADSTORAGE a2 ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'StatusMesin'
+                LEFT JOIN ADSTORAGE a3 ON a3.UNIQUEID = p.ABSUNIQUEID AND a3.FIELDNAME = 'QtySalin'
+                LEFT JOIN ADSTORAGE a4 ON a4.UNIQUEID = p.ABSUNIQUEID AND a4.FIELDNAME = 'QtyOperIn'
+                LEFT JOIN ADSTORAGE a5 ON a5.UNIQUEID = p.ABSUNIQUEID AND a5.FIELDNAME = 'QtyOperOut'
+                LEFT JOIN ADSTORAGE a6 ON a6.UNIQUEID = p.ABSUNIQUEID AND a6.FIELDNAME = 'RMPGreigeReqDateTo'
+                LEFT JOIN ADSTORAGE a7 ON a7.UNIQUEID = p.ABSUNIQUEID AND a7.FIELDNAME = 'TglRencana'
+                LEFT JOIN PRODUCT p2 ON p2.ITEMTYPECODE = p.ITEMTYPEAFICODE 
+                                    AND p2.SUBCODE01 = p.SUBCODE01 
+                                    AND p2.SUBCODE02 = p.SUBCODE02 
+                                    AND p2.SUBCODE03 = p.SUBCODE03 
+                                    AND p2.SUBCODE04 = p.SUBCODE04
+                LEFT JOIN ADSTORAGE a8 ON a8.UNIQUEID = p2.ABSUNIQUEID AND a8.FIELDNAME = 'Gauge'
+                LEFT JOIN ADSTORAGE a9 ON a9.UNIQUEID = p2.ABSUNIQUEID AND a9.FIELDNAME = 'Diameter'
+                LEFT JOIN ELEMENTSINSPECTION e2 ON e2.DEMANDCODE = p.CODE AND e2.ELEMENTITEMTYPECODE = 'KGF' AND e2.COMPANYCODE = '100'
+                LEFT JOIN JML251 j251 ON j251.DEMANDCODE = itx.CODE
+                LEFT JOIN JML25PM pm ON pm.DEMANDCODE = itx.CODE
+                LEFT JOIN KGPAKAI ON KGPAKAI.PRODUCTIONORDERCODE = itx.PRODUCTIONORDERCODE
+                LEFT JOIN STDR ON STDR.SUBCODE02 = itx.SUBCODE02 AND STDR.SUBCODE03 = itx.SUBCODE03 AND STDR.SUBCODE04 = itx.SUBCODE04
+                WHERE 
+                    p.CODE IN ($placeholders)
+                GROUP BY
+                    itx.CODE,
+                    itx.PROGRESSSTATUS,
+                    itx.PRODUCTIONORDERCODE,
+                    itx.SUBCODE01,
+                    itx.SUBCODE02,
+                    itx.SUBCODE03,
+                    itx.SUBCODE04,
+                    p.ABSUNIQUEID,
+                    a.VALUESTRING,
+                    a2.VALUESTRING,
+                    j251.JML,
+                    j251.JQTY,
+                    pm.JML,
+                    a3.VALUEDECIMAL,
+                    a4.VALUEDECIMAL,
+                    a5.VALUEDECIMAL,
+                    a6.VALUEDATE,
+                    a7.VALUEDATE,
+                    itx.BASEPRIMARYQUANTITY,
+                    KGPAKAI.KGPAKAI,
+                    STDR.STDRAJUT,
+                    a8.VALUEDECIMAL,
+                    a9.VALUEDECIMAL";
+
         $dataMesin = DB::connection('DB2')->select($query, $demand);
         return response()->json([
             'status' => true,
