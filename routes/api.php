@@ -16,6 +16,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/getMesinData', [MpsController::class, 'index']);
     Route::get('/getPoAndFor', [MpsController::class, 'loadPoAndFor']);
     Route::get('/getMesinByPo', [MpsController::class, 'loadMesinByPo']);
+    Route::post('/postStatusMesin', [MpsController::class, 'loadStatusMesin']);
     Route::post('/postSchedule', [MpsController::class, 'saveScheduleMesin']);
 
     Route::prefix('schedule-plan')->name('schedule.plan.')->group(function () {
