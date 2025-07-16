@@ -20,31 +20,31 @@ class MpsController extends Controller
     }
 
     // public function index()
-    // {
-    //     $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
+        // {
+        //     $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
 
-    //     $dataDB2 = DB::connection('DB2')->select("
-    //         SELECT
-    //             KDMC,
-    //             PRODUCTIONDEMANDCODE,
-    //             STATUSMESIN,
-    //             TGL_START,
-    //             TGLDELIVERY,
-    //             ESTIMASI_SELESAI,
-    //             SUBCODE01,
-    //             SUBCODE02,
-    //             SUBCODE03,
-    //             SUBCODE04
-    //         FROM ITXTEMP_SCHEDULE_KNT
-    //     ");
+        //     $dataDB2 = DB::connection('DB2')->select("
+        //         SELECT
+        //             KDMC,
+        //             PRODUCTIONDEMANDCODE,
+        //             STATUSMESIN,
+        //             TGL_START,
+        //             TGLDELIVERY,
+        //             ESTIMASI_SELESAI,
+        //             SUBCODE01,
+        //             SUBCODE02,
+        //             SUBCODE03,
+        //             SUBCODE04
+        //         FROM ITXTEMP_SCHEDULE_KNT
+        //     ");
 
-    //     return response()->json([
-    //         'status' => true,
-    //         'message' => 'Succes',
-    //         'dataMesin' => $dataMesin,
-    //         'dataNow' => $dataDB2,
-    //         'test' => 'test'
-    //     ]);
+        //     return response()->json([
+        //         'status' => true,
+        //         'message' => 'Succes',
+        //         'dataMesin' => $dataMesin,
+        //         'dataNow' => $dataDB2,
+        //         'test' => 'test'
+        //     ]);
     // }
 
     public function index()
@@ -198,71 +198,72 @@ class MpsController extends Controller
         //     	a4.VALUEDATE
         // ");
 
-        $dataPo = DB::connection('DB2')->select("
-            WITH STDR AS (
-            SELECT DISTINCT
-                PRODUCT.SUBCODE02,
-                PRODUCT.SUBCODE03,
-                PRODUCT.SUBCODE04,
-                (ADSTORAGE.VALUEDECIMAL * 24) AS STDRAJUT
-            FROM PRODUCT PRODUCT
-            LEFT JOIN ADSTORAGE ADSTORAGE 
-                ON PRODUCT.ABSUNIQUEID = ADSTORAGE.UNIQUEID
-            WHERE 
-                ADSTORAGE.NAMENAME = 'ProductionRate'
-                AND PRODUCT.ITEMTYPECODE = 'KGF'
-                AND PRODUCT.COMPANYCODE = '100'
-            )
-            SELECT
-                TRIM(p.CODE) AS CODE,
-                a2.VALUESTRING AS NO_MESIN, 
-                p.ORDERDATE,
-                a5.VALUEDATE AS TGL_START,
-                a4.VALUEDATE AS TGLDELIVERY,
-                a2.VALUESTRING AS STATUSRMP,
-                TRIM(p.SUBCODE02) AS SUBCODE02,
-                TRIM(p.SUBCODE03) AS SUBCODE03,
-                TRIM(p.SUBCODE04) AS SUBCODE04,
-                ISNULL (a6.VALUEDECIMAL, 0) AS QTYOPOUT,
-                DECIMAL(SUM(p.USERPRIMARYQUANTITY), 18, 2) + ISNULL (a6.VALUEDECIMAL, 0) AS QTY_TOTAL,
-                SUM(a3.VALUEDECIMAL) AS QTYSALIN,
-                s.STDRAJUT
-            FROM
-                PRODUCTIONDEMAND p
-            LEFT JOIN ADSTORAGE a 
-                ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'MachineNoCode'
-            LEFT JOIN ADSTORAGE a2 
-                ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'StatusRMP'
-            LEFT JOIN ADSTORAGE a3 
-                ON p.ABSUNIQUEID = a3.UNIQUEID AND a3.NAMENAME = 'QtySalin'
-            LEFT JOIN ADSTORAGE a4 
-                ON a4.UNIQUEID = p.ABSUNIQUEID AND a4.FIELDNAME = 'RMPGreigeReqDateTo'
-            LEFT JOIN ADSTORAGE a5 
-                ON a5.UNIQUEID = p.ABSUNIQUEID AND a5.FIELDNAME = 'TglRencana'
-            LEFT JOIN ADSTORAGE a6
-                ON a6.UNIQUEID = p.ABSUNIQUEID AND a6.FIELDNAME = 'QtyOperOut'
-            LEFT JOIN STDR s 
-                ON TRIM(p.SUBCODE02) = s.SUBCODE02
-                AND TRIM(p.SUBCODE03) = s.SUBCODE03
-                AND TRIM(p.SUBCODE04) = s.SUBCODE04
-            WHERE
-                p.ITEMTYPEAFICODE = 'KGF'
-            AND p.PROGRESSSTATUS != '6'
-            AND a.VALUESTRING IS NULL
-            AND a2.VALUESTRING IN ('1', '4')
-            GROUP BY
-                p.CODE,
-                a.VALUESTRING,
-                a2.VALUESTRING,
-                p.ORDERDATE,
-                p.SUBCODE02,
-                p.SUBCODE03,
-                p.SUBCODE04,
-                a5.VALUEDATE,
-                a4.VALUEDATE,
-                s.STDRAJUT,
-                a6.VALUEDECIMAL
-        ");
+        $dataPo = DB::connection('DB2')->select("WITH STDR AS (
+                                                        SELECT DISTINCT
+                                                            PRODUCT.SUBCODE02,
+                                                            PRODUCT.SUBCODE03,
+                                                            PRODUCT.SUBCODE04,
+                                                            (ADSTORAGE.VALUEDECIMAL * 24) AS STDRAJUT
+                                                        FROM PRODUCT PRODUCT
+                                                        LEFT JOIN ADSTORAGE ADSTORAGE 
+                                                            ON PRODUCT.ABSUNIQUEID = ADSTORAGE.UNIQUEID
+                                                        WHERE 
+                                                            ADSTORAGE.NAMENAME = 'ProductionRate'
+                                                            AND PRODUCT.ITEMTYPECODE = 'KGF'
+                                                            AND PRODUCT.COMPANYCODE = '100'
+                                                        )
+                                                        SELECT
+                                                            TRIM(p.CODE) AS CODE,
+                                                            a2.VALUESTRING AS NO_MESIN, 
+                                                            p.ORDERDATE,
+                                                            a5.VALUEDATE AS TGL_START,
+                                                            a4.VALUEDATE AS TGLDELIVERY,
+                                                            a2.VALUESTRING AS STATUSRMP,
+                                                            TRIM(p.SUBCODE02) AS SUBCODE02,
+                                                            TRIM(p.SUBCODE03) AS SUBCODE03,
+                                                            TRIM(p.SUBCODE04) AS SUBCODE04,
+                                                            ISNULL (a6.VALUEDECIMAL, 0) AS QTYOPOUT,
+                                                            DECIMAL(SUM(p.USERPRIMARYQUANTITY), 18, 2) + ISNULL (a6.VALUEDECIMAL, 0) AS QTY_TOTAL,
+                                                            SUM(a3.VALUEDECIMAL) AS QTYSALIN,
+                                                            s.STDRAJUT,
+                                                            CAST(a9.VALUEDECIMAL AS INT) || '''''X' || CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE_DIAMETER
+                                                        FROM
+                                                            PRODUCTIONDEMAND p
+                                                        LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'MachineNoCode'
+                                                        LEFT JOIN ADSTORAGE a2 ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'StatusRMP'
+                                                        LEFT JOIN ADSTORAGE a3 ON p.ABSUNIQUEID = a3.UNIQUEID AND a3.NAMENAME = 'QtySalin'
+                                                        LEFT JOIN ADSTORAGE a4 ON a4.UNIQUEID = p.ABSUNIQUEID AND a4.FIELDNAME = 'RMPGreigeReqDateTo'
+                                                        LEFT JOIN ADSTORAGE a5 ON a5.UNIQUEID = p.ABSUNIQUEID AND a5.FIELDNAME = 'TglRencana'
+                                                        LEFT JOIN ADSTORAGE a6 ON a6.UNIQUEID = p.ABSUNIQUEID AND a6.FIELDNAME = 'QtyOperOut'
+                                                        LEFT JOIN PRODUCT p2 ON p2.ITEMTYPECODE = p.ITEMTYPEAFICODE 
+                                                                            AND p2.SUBCODE01 = p.SUBCODE01 
+                                                                            AND p2.SUBCODE02 = p.SUBCODE02 
+                                                                            AND p2.SUBCODE03 = p.SUBCODE03 
+                                                                            AND p2.SUBCODE04 = p.SUBCODE04
+                                                        LEFT JOIN ADSTORAGE a8 ON a8.UNIQUEID = p2.ABSUNIQUEID AND a8.FIELDNAME = 'Gauge'
+                                                        LEFT JOIN ADSTORAGE a9 ON a9.UNIQUEID = p2.ABSUNIQUEID AND a9.FIELDNAME = 'Diameter'
+                                                        LEFT JOIN STDR s ON TRIM(p.SUBCODE02) = s.SUBCODE02
+                                                                        AND TRIM(p.SUBCODE03) = s.SUBCODE03
+                                                                        AND TRIM(p.SUBCODE04) = s.SUBCODE04
+                                                        WHERE
+                                                            p.ITEMTYPEAFICODE = 'KGF'
+                                                        AND p.PROGRESSSTATUS != '6'
+                                                        AND a.VALUESTRING IS NULL
+                                                        AND a2.VALUESTRING IN ('1', '4')
+                                                        GROUP BY
+                                                            p.CODE,
+                                                            a.VALUESTRING,
+                                                            a2.VALUESTRING,
+                                                            p.ORDERDATE,
+                                                            p.SUBCODE02,
+                                                            p.SUBCODE03,
+                                                            p.SUBCODE04,
+                                                            a5.VALUEDATE,
+                                                            a4.VALUEDATE,
+                                                            s.STDRAJUT,
+                                                            a6.VALUEDECIMAL,
+                                                            a9.VALUEDECIMAL,
+                                                            a8.VALUEDECIMAL");
 
         return response()->json([
             'status' => true,
