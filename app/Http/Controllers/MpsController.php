@@ -272,15 +272,84 @@ class MpsController extends Controller
         ]);
     }
 
+    // public function loadMesinByPo(Request $request)
+    // {
+    //     $demand = $request->input('demand');
+    
+    //     $dataMesin = DB::connection('DB2')->select("
+    //         SELECT DISTINCT
+    //             USERGENERICGROUP.CODE AS NO_MESIN
+    //         FROM
+    //             DB2ADMIN.USERGENERICGROUP
+    //         WHERE
+    //             USERGENERICGROUP.USERGENERICGROUPTYPECODE = 'MCK'
+    //             AND USERGENERICGROUP.USERGENGROUPTYPECOMPANYCODE = '100'
+    //             AND USERGENERICGROUP.OWNINGCOMPANYCODE = '100'
+    //             AND USERGENERICGROUP.SHORTDESCRIPTION = (
+    //                 SELECT
+    //                     COALESCE(CAST(a3.VALUEDECIMAL AS INT), 0) || '''''X' || COALESCE(CAST(a2.VALUEDECIMAL AS INT), 0) || 'G'
+    //                 FROM
+    //                     DB2ADMIN.PRODUCTIONDEMAND p
+    //                 LEFT JOIN DB2ADMIN.PRODUCT p2 
+    //                     ON p2.ITEMTYPECODE = 'KGF'
+    //                     AND p2.SUBCODE01 = p.SUBCODE01 
+    //                     AND p2.SUBCODE02 = p.SUBCODE02 
+    //                     AND p2.SUBCODE03 = p.SUBCODE03 
+    //                     AND p2.SUBCODE04 = p.SUBCODE04
+    //                 LEFT JOIN DB2ADMIN.ADSTORAGE a2 
+    //                     ON a2.UNIQUEID = p2.ABSUNIQUEID 
+    //                     AND a2.FIELDNAME = 'Gauge'
+    //                 LEFT JOIN DB2ADMIN.ADSTORAGE a3 
+    //                     ON a3.UNIQUEID = p2.ABSUNIQUEID 
+    //                     AND a3.FIELDNAME = 'Diameter'
+    //                 WHERE 
+    //                     p.CODE = ?
+    //                     AND NOT p.PROGRESSSTATUS = '6'
+    //                     AND p.ITEMTYPEAFICODE = 'KGF'
+    //                     AND a2.VALUEDECIMAL != 0
+    //                     AND a3.VALUEDECIMAL != 0
+    //                 FETCH FIRST 1 ROW ONLY
+    //             )
+    //         ORDER BY USERGENERICGROUP.CODE ASC;
+    //     ", [$demand]);
+
+    //     $finalData = [];
+
+    //     foreach ($dataMesin as $mesin) {
+    //         $noMesin = trim($mesin->no_mesin);
+
+    //         $spResult = DB::connection('sqlsrv')->select("EXEC sp_get_avail_mechine ?", [$noMesin]);
+
+    //         $spData = $spResult[0] ?? null;
+
+    //         $finalData[] = [
+    //             'no_mesin' => $noMesin,
+    //             'productiondemandcode' => trim($spData->productiondemandcode),
+    //             'item_code' => $spData->item_code,
+    //             'tgl_start' => $spData->start_date,
+    //             'tgldelivery' => $spData->end_date,
+    //             'storage' => $spData->mesin_storage ?? null,
+    //             'nama_mesin' => $spData->nama_mesin ?? null,
+    //             'jenis' => $spData->jenis ?? null,
+    //             'item_code_terakhir' => $spData->item_code ?? null,
+    //             'end_date_terakhir' => $spData->end_date ?? null,
+    //         ];
+    //     }
+
+    //     return response()->json([
+    //         'status' => true,
+    //         'message' => 'Success',
+    //         'dataMesin' => $finalData
+    //     ]);
+    // }
+
     public function loadMesinByPo(Request $request)
     {
         $demand = $request->input('demand');
     
         $dataMesin = DB::connection('DB2')->select("
-            SELECT DISTINCT
-                USERGENERICGROUP.CODE AS NO_MESIN
-            FROM
-                DB2ADMIN.USERGENERICGROUP
+            SELECT DISTINCT USERGENERICGROUP.CODE AS NO_MESIN
+            FROM DB2ADMIN.USERGENERICGROUP
             WHERE
                 USERGENERICGROUP.USERGENERICGROUPTYPECODE = 'MCK'
                 AND USERGENERICGROUP.USERGENGROUPTYPECOMPANYCODE = '100'
@@ -288,8 +357,7 @@ class MpsController extends Controller
                 AND USERGENERICGROUP.SHORTDESCRIPTION = (
                     SELECT
                         COALESCE(CAST(a3.VALUEDECIMAL AS INT), 0) || '''''X' || COALESCE(CAST(a2.VALUEDECIMAL AS INT), 0) || 'G'
-                    FROM
-                        DB2ADMIN.PRODUCTIONDEMAND p
+                    FROM DB2ADMIN.PRODUCTIONDEMAND p
                     LEFT JOIN DB2ADMIN.PRODUCT p2 
                         ON p2.ITEMTYPECODE = 'KGF'
                         AND p2.SUBCODE01 = p.SUBCODE01 
@@ -297,11 +365,9 @@ class MpsController extends Controller
                         AND p2.SUBCODE03 = p.SUBCODE03 
                         AND p2.SUBCODE04 = p.SUBCODE04
                     LEFT JOIN DB2ADMIN.ADSTORAGE a2 
-                        ON a2.UNIQUEID = p2.ABSUNIQUEID 
-                        AND a2.FIELDNAME = 'Gauge'
+                        ON a2.UNIQUEID = p2.ABSUNIQUEID AND a2.FIELDNAME = 'Gauge'
                     LEFT JOIN DB2ADMIN.ADSTORAGE a3 
-                        ON a3.UNIQUEID = p2.ABSUNIQUEID 
-                        AND a3.FIELDNAME = 'Diameter'
+                        ON a3.UNIQUEID = p2.ABSUNIQUEID AND a3.FIELDNAME = 'Diameter'
                     WHERE 
                         p.CODE = ?
                         AND NOT p.PROGRESSSTATUS = '6'
@@ -313,21 +379,49 @@ class MpsController extends Controller
             ORDER BY USERGENERICGROUP.CODE ASC;
         ", [$demand]);
 
+        $scheduleData = DB::connection('DB2')->select("
+            SELECT
+                KDMC,
+                PRODUCTIONDEMANDCODE,
+                TGL_START,
+                TGLMULAI,
+                TGLDELIVERY,
+                ESTIMASI_SELESAI,
+                SUBCODE02,
+                SUBCODE03,
+                SUBCODE04,
+                QTY_SISA,
+                STANDAR_RAJUT,
+                QTY_ORDER
+            FROM ITXTEMP_SCHEDULE_KNT
+            WHERE ESTIMASI_SELESAI IS NOT NULL
+        ");
+
+        $scheduleMap = collect($scheduleData)->keyBy(fn($row) => trim($row->kdmc));
+
         $finalData = [];
 
         foreach ($dataMesin as $mesin) {
             $noMesin = trim($mesin->no_mesin);
 
+            // Ambil dari stored procedure
             $spResult = DB::connection('sqlsrv')->select("EXEC sp_get_avail_mechine ?", [$noMesin]);
-
             $spData = $spResult[0] ?? null;
+
+            // Cek apakah mesin ini juga ada di ITXTEMP_SCHEDULE_KNT
+            $schedule = $scheduleMap->get($noMesin);
+
+            // Build item_code dari subcode jika ada
+            $itemCodeFromSchedule = $schedule 
+                ? trim($schedule->subcode02 . '-' . $schedule->subcode03 . '-' . $schedule->subcode04) 
+                : null;
 
             $finalData[] = [
                 'no_mesin' => $noMesin,
-                'productiondemandcode' => trim($spData->productiondemandcode),
-                'item_code' => $spData->item_code,
-                'tgl_start' => $spData->start_date,
-                'tgldelivery' => $spData->end_date,
+                'productiondemandcode' => $schedule->productiondemandcode ?? trim($spData->productiondemandcode ?? ''),
+                'item_code' => $itemCodeFromSchedule ?? $spData->item_code ?? null,
+                'tgl_start' => $schedule->tgl_start ?? $spData->start_date ?? null,
+                'tgldelivery' => $schedule->estimasi_selesai ?? $spData->end_date ?? null,
                 'storage' => $spData->mesin_storage ?? null,
                 'nama_mesin' => $spData->nama_mesin ?? null,
                 'jenis' => $spData->jenis ?? null,
@@ -342,6 +436,7 @@ class MpsController extends Controller
             'dataMesin' => $finalData
         ]);
     }
+
 
     public function loadStatusMesin(Request $request){
         $demand = $request->input('demand');
