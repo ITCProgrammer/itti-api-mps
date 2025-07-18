@@ -398,8 +398,6 @@ class MpsController extends Controller
         ]);
     }
 
-
-
     public function loadStatusMesin(Request $request){
         $demand = $request->input('demand');
         if (!is_array($demand) || empty($demand)) {
@@ -468,12 +466,11 @@ class MpsController extends Controller
                                 COALESCE(j251.JQTY, 0.00)
                             ) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)
                         ) DAYS AS ESTIMASI_SELESAI,
-                    CAST(COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00) AS DECIMAL(18, 2)) AS QTY_ORDER,
-                    CAST(
+                    COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00) AS QTY_ORDER,
                         (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
                         (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
                         COALESCE(j251.JQTY, 0.00)
-                        AS DECIMAL(18, 2)) AS QTY_SISA,
+                        AS QTY_SISA,
                     CASE 
                         WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND COALESCE(pm.JML, 0) > 0 
                             THEN 'Perbaikan Mesin'
@@ -500,7 +497,7 @@ class MpsController extends Controller
                         ELSE 'Tidak Ada PO'
                     END AS STATUSMESIN,
                     CAST(a9.VALUEDECIMAL AS INT) || '''''X' || CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE_DIAMETER,
-                    STDR.STDRAJUT
+                    STDR.STDRAJUT AS STDRAJUT
                 FROM 
                     ITXVIEWKNTORDER itx
                 LEFT JOIN PRODUCTIONDEMAND p ON p.CODE = itx.CODE
@@ -551,6 +548,15 @@ class MpsController extends Controller
                     a9.VALUEDECIMAL";
 
         $dataMesin = DB::connection('DB2')->select($query, $demand);
+
+        // foreach ($dataMesin as &$row) {
+        //     foreach (['qty_order', 'qty_sisa', 'stdrajut'] as $field) {
+        //         if (isset($row->$field)) {
+        //             $row->$field = rtrim(rtrim(number_format((float)$row->$field, 6, '.', ''), '0'), '.');
+        //         }
+        //     }
+        // }
+
         return response()->json([
             'status' => true,
             'message' => 'Success',
