@@ -343,99 +343,254 @@ class MpsController extends Controller
     //     ]);
     // }
 
-    public function loadMesinByPo(Request $request)
-    {
-        $demand = $request->input('demand');
+    // public function loadMesinByPo(Request $request)
+    // {
+    //     $demand = $request->input('demand');
     
-        $dataMesin = DB::connection('DB2')->select("
-            SELECT DISTINCT USERGENERICGROUP.CODE AS NO_MESIN
-            FROM DB2ADMIN.USERGENERICGROUP
-            WHERE
-                USERGENERICGROUP.USERGENERICGROUPTYPECODE = 'MCK'
-                AND USERGENERICGROUP.USERGENGROUPTYPECOMPANYCODE = '100'
-                AND USERGENERICGROUP.OWNINGCOMPANYCODE = '100'
-                AND USERGENERICGROUP.SHORTDESCRIPTION = (
-                    SELECT
-                        COALESCE(CAST(a3.VALUEDECIMAL AS INT), 0) || '''''X' || COALESCE(CAST(a2.VALUEDECIMAL AS INT), 0) || 'G'
-                    FROM DB2ADMIN.PRODUCTIONDEMAND p
-                    LEFT JOIN DB2ADMIN.PRODUCT p2 
-                        ON p2.ITEMTYPECODE = 'KGF'
-                        AND p2.SUBCODE01 = p.SUBCODE01 
-                        AND p2.SUBCODE02 = p.SUBCODE02 
-                        AND p2.SUBCODE03 = p.SUBCODE03 
-                        AND p2.SUBCODE04 = p.SUBCODE04
-                    LEFT JOIN DB2ADMIN.ADSTORAGE a2 
-                        ON a2.UNIQUEID = p2.ABSUNIQUEID AND a2.FIELDNAME = 'Gauge'
-                    LEFT JOIN DB2ADMIN.ADSTORAGE a3 
-                        ON a3.UNIQUEID = p2.ABSUNIQUEID AND a3.FIELDNAME = 'Diameter'
-                    WHERE 
-                        p.CODE = ?
-                        AND NOT p.PROGRESSSTATUS = '6'
-                        AND p.ITEMTYPEAFICODE = 'KGF'
-                        AND a2.VALUEDECIMAL != 0
-                        AND a3.VALUEDECIMAL != 0
-                    FETCH FIRST 1 ROW ONLY
-                )
-            ORDER BY USERGENERICGROUP.CODE ASC;
-        ", [$demand]);
+    //     $dataMesin = DB::connection('DB2')->select("
+    //         SELECT DISTINCT USERGENERICGROUP.CODE AS NO_MESIN
+    //         FROM DB2ADMIN.USERGENERICGROUP
+    //         WHERE
+    //             USERGENERICGROUP.USERGENERICGROUPTYPECODE = 'MCK'
+    //             AND USERGENERICGROUP.USERGENGROUPTYPECOMPANYCODE = '100'
+    //             AND USERGENERICGROUP.OWNINGCOMPANYCODE = '100'
+    //             AND USERGENERICGROUP.SHORTDESCRIPTION = (
+    //                 SELECT
+    //                     COALESCE(CAST(a3.VALUEDECIMAL AS INT), 0) || '''''X' || COALESCE(CAST(a2.VALUEDECIMAL AS INT), 0) || 'G'
+    //                 FROM DB2ADMIN.PRODUCTIONDEMAND p
+    //                 LEFT JOIN DB2ADMIN.PRODUCT p2 
+    //                     ON p2.ITEMTYPECODE = 'KGF'
+    //                     AND p2.SUBCODE01 = p.SUBCODE01 
+    //                     AND p2.SUBCODE02 = p.SUBCODE02 
+    //                     AND p2.SUBCODE03 = p.SUBCODE03 
+    //                     AND p2.SUBCODE04 = p.SUBCODE04
+    //                 LEFT JOIN DB2ADMIN.ADSTORAGE a2 
+    //                     ON a2.UNIQUEID = p2.ABSUNIQUEID AND a2.FIELDNAME = 'Gauge'
+    //                 LEFT JOIN DB2ADMIN.ADSTORAGE a3 
+    //                     ON a3.UNIQUEID = p2.ABSUNIQUEID AND a3.FIELDNAME = 'Diameter'
+    //                 WHERE 
+    //                     p.CODE = ?
+    //                     AND NOT p.PROGRESSSTATUS = '6'
+    //                     AND p.ITEMTYPEAFICODE = 'KGF'
+    //                     AND a2.VALUEDECIMAL != 0
+    //                     AND a3.VALUEDECIMAL != 0
+    //                 FETCH FIRST 1 ROW ONLY
+    //             )
+    //         ORDER BY USERGENERICGROUP.CODE ASC;
+    //     ", [$demand]);
 
-        $scheduleData = DB::connection('DB2')->select("
-            SELECT
-                KDMC,
-                PRODUCTIONDEMANDCODE,
-                TGL_START,
-                TGLMULAI,
-                TGLDELIVERY,
-                ESTIMASI_SELESAI,
-                SUBCODE02,
-                SUBCODE03,
-                SUBCODE04,
-                QTY_SISA,
-                STANDAR_RAJUT,
-                QTY_ORDER
-            FROM ITXTEMP_SCHEDULE_KNT
-            WHERE ESTIMASI_SELESAI IS NOT NULL
-        ");
+    //     $scheduleData = DB::connection('DB2')->select("
+    //         SELECT
+    //             KDMC,
+    //             PRODUCTIONDEMANDCODE,
+    //             TGL_START,
+    //             TGLMULAI,
+    //             TGLDELIVERY,
+    //             ESTIMASI_SELESAI,
+    //             SUBCODE02,
+    //             SUBCODE03,
+    //             SUBCODE04,
+    //             QTY_SISA,
+    //             STANDAR_RAJUT,
+    //             QTY_ORDER
+    //         FROM ITXTEMP_SCHEDULE_KNT
+    //         WHERE ESTIMASI_SELESAI IS NOT NULL
+    //     ");
 
-        $scheduleMap = collect($scheduleData)->keyBy(fn($row) => trim($row->kdmc));
+    //     $scheduleMap = collect($scheduleData)->keyBy(fn($row) => trim($row->kdmc));
+    //     $scheduleGrouped = collect($scheduleData)->groupBy(fn($row) => trim($row->kdmc));
 
-        $finalData = [];
 
-        foreach ($dataMesin as $mesin) {
-            $noMesin = trim($mesin->no_mesin);
+    //     $finalData = [];
 
-            // Ambil dari stored procedure
-            $spResult = DB::connection('sqlsrv')->select("EXEC sp_get_avail_mechine ?", [$noMesin]);
-            $spData = $spResult[0] ?? null;
+    //     foreach ($dataMesin as $mesin) {
+    //         $noMesin = trim($mesin->no_mesin);
 
-            // Cek apakah mesin ini juga ada di ITXTEMP_SCHEDULE_KNT
-            $schedule = $scheduleMap->get($noMesin);
+    //         $spResult = DB::connection('sqlsrv')->select("EXEC sp_get_mesin_tersedia ?", [$noMesin]);
+    //         $spData = $spResult[0] ?? null;
 
-            // Build item_code dari subcode jika ada
-            $itemCodeFromSchedule = $schedule 
-                ? trim($schedule->subcode02 . '-' . $schedule->subcode03 . '-' . $schedule->subcode04) 
-                : null;
+    //         $schedule = $scheduleMap->get($noMesin);
 
-            $finalData[] = [
-                'no_mesin' => $noMesin,
-                'productiondemandcode' => $schedule->productiondemandcode ?? trim($spData->productiondemandcode ?? ''),
-                'item_code' => $itemCodeFromSchedule ?? $spData->item_code ?? null,
-                'tgl_start' => $schedule->tgl_start ?? $spData->start_date ?? null,
-                'tgldelivery' => $schedule->estimasi_selesai ?? $spData->end_date ?? null,
-                'storage' => $spData->mesin_storage ?? null,
-                'nama_mesin' => $spData->nama_mesin ?? null,
-                'jenis' => $spData->jenis ?? null,
-                'item_code_terakhir' => $spData->item_code ?? null,
-                'end_date_terakhir' => $spData->end_date ?? null,
-            ];
+    //         $itemCodeFromSchedule = $schedule 
+    //             ? trim($schedule->subcode02 . '-' . $schedule->subcode03 . '-' . $schedule->subcode04) 
+    //             : null;
+
+    //         $bookedDates = [];
+
+    //         if ($schedule) {
+    //             $start = \Carbon\Carbon::parse($schedule->tgl_start)->format('Y-m-d');
+    //             $end = \Carbon\Carbon::parse($schedule->estimasi_selesai)->format('Y-m-d');
+    //             $bookedDates = collect(range(
+    //                 strtotime($start),
+    //                 strtotime($end),
+    //                 86400
+    //             ))->map(fn($ts) => date('Y-m-d', $ts))->toArray();
+    //         } elseif ($spData?->start_date && $spData?->end_date) {
+    //             $start = \Carbon\Carbon::parse($spData->start_date)->format('Y-m-d');
+    //             $end = \Carbon\Carbon::parse($spData->end_date)->format('Y-m-d');
+    //             $bookedDates = collect(range(
+    //                 strtotime($start),
+    //                 strtotime($end),
+    //                 86400
+    //             ))->map(fn($ts) => date('Y-m-d', $ts))->toArray();
+    //         }
+            
+
+    //         $finalData[] = [
+    //             'no_mesin' => $noMesin,
+    //             'productiondemandcode' => $schedule->productiondemandcode ?? trim($spData->productiondemandcode ?? ''),
+    //             'item_code' => $itemCodeFromSchedule ?? $spData->item_code ?? null,
+    //             'tgl_start' => $schedule->tgl_start ?? $spData->start_date ?? null,
+    //             'tgldelivery' => $schedule->estimasi_selesai ?? $spData->end_date ?? null,
+    //             'storage' => $spData->mesin_storage ?? null,
+    //             'nama_mesin' => $spData->nama_mesin ?? null,
+    //             'jenis' => $spData->jenis ?? null,
+    //             'item_code_terakhir' => $spData->item_code ?? null,
+    //             'end_date_terakhir' => $spData->end_date ?? null,
+    //             'booked_dates' => $bookedDates,
+    //         ];
+    //     }
+
+    //     return response()->json([
+    //         'status' => true,
+    //         'message' => 'Success',
+    //         'dataMesin' => $finalData
+    //     ]);
+    // }
+
+    public function loadMesinByPo(Request $request)
+{
+    $demand = $request->input('demand');
+
+    // Ambil mesin berdasarkan demand
+    $dataMesin = DB::connection('DB2')->select("
+        SELECT DISTINCT USERGENERICGROUP.CODE AS NO_MESIN
+        FROM DB2ADMIN.USERGENERICGROUP
+        WHERE
+            USERGENERICGROUP.USERGENERICGROUPTYPECODE = 'MCK'
+            AND USERGENERICGROUP.USERGENGROUPTYPECOMPANYCODE = '100'
+            AND USERGENERICGROUP.OWNINGCOMPANYCODE = '100'
+            AND USERGENERICGROUP.SHORTDESCRIPTION = (
+                SELECT
+                    COALESCE(CAST(a3.VALUEDECIMAL AS INT), 0) || '''''X' || COALESCE(CAST(a2.VALUEDECIMAL AS INT), 0) || 'G'
+                FROM DB2ADMIN.PRODUCTIONDEMAND p
+                LEFT JOIN DB2ADMIN.PRODUCT p2 
+                    ON p2.ITEMTYPECODE = 'KGF'
+                    AND p2.SUBCODE01 = p.SUBCODE01 
+                    AND p2.SUBCODE02 = p.SUBCODE02 
+                    AND p2.SUBCODE03 = p.SUBCODE03 
+                    AND p2.SUBCODE04 = p.SUBCODE04
+                LEFT JOIN DB2ADMIN.ADSTORAGE a2 
+                    ON a2.UNIQUEID = p2.ABSUNIQUEID AND a2.FIELDNAME = 'Gauge'
+                LEFT JOIN DB2ADMIN.ADSTORAGE a3 
+                    ON a3.UNIQUEID = p2.ABSUNIQUEID AND a3.FIELDNAME = 'Diameter'
+                WHERE 
+                    p.CODE = ?
+                    AND NOT p.PROGRESSSTATUS = '6'
+                    AND p.ITEMTYPEAFICODE = 'KGF'
+                    AND a2.VALUEDECIMAL != 0
+                    AND a3.VALUEDECIMAL != 0
+                FETCH FIRST 1 ROW ONLY
+            )
+        ORDER BY USERGENERICGROUP.CODE ASC;
+    ", [$demand]);
+
+    // Ambil semua jadwal dari ITXTEMP_SCHEDULE_KNT
+    $scheduleData = DB::connection('DB2')->select("
+        SELECT
+            KDMC,
+            PRODUCTIONDEMANDCODE,
+            TGL_START,
+            TGLMULAI,
+            TGLDELIVERY,
+            ESTIMASI_SELESAI,
+            SUBCODE02,
+            SUBCODE03,
+            SUBCODE04,
+            QTY_SISA,
+            STANDAR_RAJUT,
+            QTY_ORDER
+        FROM ITXTEMP_SCHEDULE_KNT
+        WHERE ESTIMASI_SELESAI IS NOT NULL
+    ");
+
+    $scheduleGrouped = collect($scheduleData)->groupBy(fn($row) => trim($row->kdmc));
+
+    $finalData = [];
+
+    foreach ($dataMesin as $mesin) {
+        $noMesin = trim($mesin->no_mesin);
+
+        // Data dari SP (tersedia demand terakhir)
+        $spResults = DB::connection('sqlsrv')->select("EXEC sp_get_mesin_tersedia ?", [$noMesin]);
+        $spData = $spResults[0] ?? null;
+
+        $productionDemandCodes = [];
+        $bookedDates = [];
+        $itemCodeAwal = null;
+        $tglStartAwal = null;
+        $tglDeliveryAwal = null;
+
+        // Ambil dari ITXTEMP_SCHEDULE_KNT
+        $schedules = $scheduleGrouped->get($noMesin) ?? collect();
+        foreach ($schedules as $index => $schedule) {
+            $start = \Carbon\Carbon::parse($schedule->tgl_start)->format('Y-m-d');
+            $end = \Carbon\Carbon::parse($schedule->estimasi_selesai)->format('Y-m-d');
+
+            $dates = collect(range(strtotime($start), strtotime($end), 86400))
+                ->map(fn($ts) => date('Y-m-d', $ts))->toArray();
+
+            $bookedDates = array_merge($bookedDates, $dates);
+            $productionDemandCodes[] = trim($schedule->productiondemandcode);
+
+            if ($index === 0) {
+                $itemCodeAwal = trim($schedule->subcode02 . '-' . $schedule->subcode03 . '-' . $schedule->subcode04);
+                $tglStartAwal = $schedule->tgl_start;
+                $tglDeliveryAwal = $schedule->estimasi_selesai;
+            }
         }
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Success',
-            'dataMesin' => $finalData
-        ]);
+        // Tambahkan dari SP (jika belum ada)
+        if ($spData?->productiondemandcode) {
+            $spPDC = trim($spData->productiondemandcode);
+            if (!in_array($spPDC, $productionDemandCodes)) {
+                $spStart = \Carbon\Carbon::parse($spData->start_date)->format('Y-m-d');
+                $spEnd = \Carbon\Carbon::parse($spData->end_date)->format('Y-m-d');
+
+                $datesSP = collect(range(strtotime($spStart), strtotime($spEnd), 86400))
+                    ->map(fn($ts) => date('Y-m-d', $ts))->toArray();
+
+                $bookedDates = array_merge($bookedDates, $datesSP);
+                $productionDemandCodes[] = $spPDC;
+            }
+        }
+
+        // Final merge and clean
+        $bookedDates = array_values(array_unique($bookedDates));
+        sort($bookedDates);
+
+        $finalData[] = [
+            'no_mesin' => $noMesin,
+            'productiondemandcode' => $productionDemandCodes,
+            'item_code' => $itemCodeAwal,
+            'tgl_start' => $tglStartAwal,
+            'tgldelivery' => $tglDeliveryAwal,
+            'storage' => $spData->mesin_storage ?? null,
+            'nama_mesin' => $spData->nama_mesin ?? null,
+            'jenis' => $spData->jenis ?? null,
+            'item_code_terakhir' => $spData->item_code ?? null,
+            'end_date_terakhir' => $spData->end_date ?? null,
+            'booked_dates' => $bookedDates
+        ];
     }
+
+    return response()->json([
+        'status' => true,
+        'message' => 'Success',
+        'dataMesin' => $finalData
+    ]);
+}
+
 
 
     public function loadStatusMesin(Request $request){
