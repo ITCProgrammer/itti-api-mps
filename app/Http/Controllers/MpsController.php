@@ -472,8 +472,8 @@ class MpsController extends Controller
                     --     ) DAYS AS ESTIMASI_SELESAI,
                     VARCHAR_FORMAT(
                         DATE(a7.VALUEDATE) + 
-                            ROUND(
-                                CAST((COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) AS DECIMAL) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)) DAYS, 'YYYY-MM-DD' ) AS ESTIMASI_SELESAI,
+                            CEILING(
+                                CAST((COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) AS DECIMAL) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)) DAYS - 1 DAYS, 'YYYY-MM-DD' ) AS ESTIMASI_SELESAI,
                         COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00) AS QTY_ORDER,
                         (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
                         (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
