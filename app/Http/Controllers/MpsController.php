@@ -69,6 +69,10 @@ class MpsController extends Controller
                 QTY_ORDER
             FROM ITXTEMP_SCHEDULE_KNT
             WHERE ESTIMASI_SELESAI IS NOT NULL
+            ORDER BY 
+                KDMC,
+                CASE WHEN TGLMULAI IS NULL THEN 1 ELSE 0 END,
+                TGLMULAI ASC
         ");
 
         // Group berdasarkan mesin
@@ -458,15 +462,19 @@ class MpsController extends Controller
                     TRIM(a2.VALUESTRING) AS StatusM,
                     COALESCE(a7.VALUEDATE, CURRENT_DATE) AS tgl_start,
                     a6.VALUEDATE AS tgl_delivery,
-                    DATE(CURRENT_DATE) + 
-                        INT(
-                            (
-                                (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
-                                (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
-                                COALESCE(j251.JQTY, 0.00)
-                            ) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)
-                        ) DAYS AS ESTIMASI_SELESAI,
-                    COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00) AS QTY_ORDER,
+                    -- DATE(CURRENT_DATE) + 
+                    --     INT(
+                    --         (
+                    --             (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
+                    --             (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
+                    --             COALESCE(j251.JQTY, 0.00)
+                    --         ) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)
+                    --     ) DAYS AS ESTIMASI_SELESAI,
+                    VARCHAR_FORMAT(
+                        DATE(a7.VALUEDATE) + 
+                            ROUND(
+                                CAST((COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) AS DECIMAL) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)) DAYS, 'YYYY-MM-DD' ) AS ESTIMASI_SELESAI,
+                        COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00) AS QTY_ORDER,
                         (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
                         (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
                         COALESCE(j251.JQTY, 0.00)
