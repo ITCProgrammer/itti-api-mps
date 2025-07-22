@@ -591,7 +591,7 @@ class MpsController extends Controller
         }
 
         $hariProduksi = ceil($qty / $std_Rajut);
-        $tglEnd = Carbon::parse($tglStart)->addDays($hariProduksi);
+        $tglEnd = Carbon::parse($tglStart)->addDays($hariProduksi)->subDay();
         $tglEndFormatted = $tglEnd->toDateString();
 
         try {
