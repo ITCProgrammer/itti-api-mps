@@ -638,6 +638,62 @@ class MpsController extends Controller
             return response()->json(['success' => false, 'message' => $e->getMessage()]);
         }
     }
+    
+    public function deleteScheduleMesin(Request $request)
+    {
+        try {
+            $demandCode = $request->input('demand.demand');
+            $rec_user   = $request->input('demand.name');
+
+            // EKSEKUSI SP DI SQL Server
+                $result = DB::connection('sqlsrv')->statement('EXEC sp_delete_schedule ?,?', [
+                    $rec_user,
+                    $demandCode
+                ]);
+
+                if (!$result) {
+                    DB::connection('DB2')->rollBack();
+                    return response()->json(['success' => false, 'message' => 'Gagal menyimpan ke SQL Server']);
+                }
+            // EKSEKUSI SP DI SQL Server
+
+            // EKSEKUSI DI DB2 
+                $resultDB2 = DB::connection('DB2')->selectOne("SELECT ABSUNIQUEID
+                                                        FROM PRODUCTIONDEMAND
+                                                        WHERE CODE = ?", [$demandCode]);
+                $absUniqueId = $resultDB2->absuniqueid;
+
+                // STEP 2 
+                DB::connection('DB2')->delete("DELETE FROM ADSTORAGE
+                                                WHERE UNIQUEID = ?
+                                                AND FIELDNAME = ?
+                ", [$absUniqueId, 'MachineNoCode']);
+
+                // // STEP 3
+                DB::connection('DB2')->delete("DELETE FROM ADSTORAGE
+                                                WHERE UNIQUEID = ?
+                                                AND FIELDNAME = ?
+                ", [$absUniqueId, 'TglRencana']);
+
+                // // STEP 4
+                DB::connection('DB2')->delete("DELETE FROM ADSTORAGE
+                                                WHERE UNIQUEID = ?
+                                                AND FIELDNAME = ?
+                ", [$absUniqueId, 'RMPGreigeReqDateTo']);
+            // EKSEKUSI DI DB2 
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data berhasil dihapus di SQL Server & DB2'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTrace()
+            ], 500);
+        }
+    }
 
     private function insertOrUpdateADStorage($uniqueId, $nameName, $fieldName, $keySeq, $dataType, $valueString = null, $valueDate = null)
     {
