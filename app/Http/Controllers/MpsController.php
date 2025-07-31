@@ -162,7 +162,6 @@ class MpsController extends Controller
         ]);
     }
 
-
     public function loadPoAndFor()
     {
         // $dataPo = DB::connection('DB2')->select("
@@ -280,35 +279,53 @@ class MpsController extends Controller
     {
         $demand = $request->input('demand');
         $dataMesin = DB::connection('DB2')->select("
-        SELECT DISTINCT USERGENERICGROUP.CODE AS NO_MESIN
-        FROM DB2ADMIN.USERGENERICGROUP
-        WHERE
-            USERGENERICGROUP.USERGENERICGROUPTYPECODE = 'MCK'
-            AND USERGENERICGROUP.USERGENGROUPTYPECOMPANYCODE = '100'
-            AND USERGENERICGROUP.OWNINGCOMPANYCODE = '100'
-            AND USERGENERICGROUP.SHORTDESCRIPTION = (
-                SELECT
-                    COALESCE(CAST(a3.VALUEDECIMAL AS INT), 0) || '''''X' || COALESCE(CAST(a2.VALUEDECIMAL AS INT), 0) || 'G'
-                FROM DB2ADMIN.PRODUCTIONDEMAND p
-                LEFT JOIN DB2ADMIN.PRODUCT p2 
-                    ON p2.ITEMTYPECODE = 'KGF'
-                    AND p2.SUBCODE01 = p.SUBCODE01 
-                    AND p2.SUBCODE02 = p.SUBCODE02 
-                    AND p2.SUBCODE03 = p.SUBCODE03 
-                    AND p2.SUBCODE04 = p.SUBCODE04
-                LEFT JOIN DB2ADMIN.ADSTORAGE a2 
-                    ON a2.UNIQUEID = p2.ABSUNIQUEID AND a2.FIELDNAME = 'Gauge'
-                LEFT JOIN DB2ADMIN.ADSTORAGE a3 
-                    ON a3.UNIQUEID = p2.ABSUNIQUEID AND a3.FIELDNAME = 'Diameter'
-                WHERE 
-                    p.CODE = ?
-                    AND NOT p.PROGRESSSTATUS = '6'
-                    AND p.ITEMTYPEAFICODE = 'KGF'
-                    AND a2.VALUEDECIMAL != 0
-                    AND a3.VALUEDECIMAL != 0
-                FETCH FIRST 1 ROW ONLY
-            )
-        ORDER BY USERGENERICGROUP.CODE ASC;
+        SELECT 
+        	ug.CODE AS NO_MESIN,
+        	CASE 
+        		WHEN LOCATE('X', ug.SHORTDESCRIPTION) > 0 
+        			THEN SUBSTR(ug.SHORTDESCRIPTION, LOCATE('X', ug.SHORTDESCRIPTION) + 1)
+        		WHEN LOCATE('x', ug.SHORTDESCRIPTION) > 0 
+        			THEN SUBSTR(ug.SHORTDESCRIPTION, LOCATE('x', ug.SHORTDESCRIPTION) + 1)
+        		ELSE ug.SHORTDESCRIPTION
+        	END AS SHORTDESCRIPTION_CLEAN,
+        	CASE
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'DO' THEN 'Double Knit'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'RI' THEN 'Rib'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'SO' THEN 'Single Knit'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'ST' THEN 'Single Knit'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'TF' THEN 'Fleece'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'TT' THEN 'Fleece'
+        	END AS jenis,
+        	CAST(a2.VALUEDECIMAL AS INT) AS GUIGE,
+        	ug.LONGDESCRIPTION
+        FROM DB2ADMIN.USERGENERICGROUP ug
+        LEFT JOIN RESOURCES r ON r.CODE = ug.CODE
+        LEFT JOIN DB2ADMIN.PRODUCTIONDEMAND p ON p.CODE = ?
+        LEFT JOIN DB2ADMIN.PRODUCT p2 
+        	ON p2.ITEMTYPECODE = 'KGF'
+        	AND p2.SUBCODE01 = p.SUBCODE01 
+        	AND p2.SUBCODE02 = p.SUBCODE02 
+        	AND p2.SUBCODE03 = p.SUBCODE03 
+        	AND p2.SUBCODE04 = p.SUBCODE04
+        LEFT JOIN DB2ADMIN.ADSTORAGE a2 
+        	ON a2.UNIQUEID = p2.ABSUNIQUEID AND a2.FIELDNAME = 'Gauge'
+        LEFT JOIN DB2ADMIN.ADSTORAGE a3 
+        	ON a3.UNIQUEID = p2.ABSUNIQUEID AND a3.FIELDNAME = 'Diameter'
+        WHERE 
+        	ug.USERGENERICGROUPTYPECODE = 'MCK'
+        	AND p.PROGRESSSTATUS != '6'
+        	AND p.ITEMTYPEAFICODE = 'KGF'
+        	AND a2.VALUEDECIMAL != 0
+        	AND a3.VALUEDECIMAL != 0
+        	AND (
+        		CASE 
+        			WHEN LOCATE('X', ug.SHORTDESCRIPTION) > 0 
+        				THEN SUBSTR(ug.SHORTDESCRIPTION, LOCATE('X', ug.SHORTDESCRIPTION) + 1)
+        			WHEN LOCATE('x', ug.SHORTDESCRIPTION) > 0 
+        				THEN SUBSTR(ug.SHORTDESCRIPTION, LOCATE('xb', ug.SHORTDESCRIPTION) + 1)
+        			ELSE ug.SHORTDESCRIPTION
+        		END = CAST(a2.VALUEDECIMAL AS INT) || 'G'
+        	)
         ", [$demand]);
         $scheduleData = DB::connection('DB2')->select("
         SELECT
@@ -402,7 +419,8 @@ class MpsController extends Controller
         ]);
     }
 
-    public function loadStatusMesin(Request $request){
+    public function loadStatusMesin(Request $request)
+    {
         $demand = $request->input('demand');
         if (!is_array($demand) || empty($demand)) {
             return response()->json(['status' => false, 'message' => 'Demand harus berupa array dan tidak kosong']);
