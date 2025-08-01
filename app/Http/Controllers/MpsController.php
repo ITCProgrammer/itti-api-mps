@@ -229,7 +229,8 @@ class MpsController extends Controller
                                                             DECIMAL(SUM(p.USERPRIMARYQUANTITY), 18, 2) + ISNULL (a6.VALUEDECIMAL, 0) AS QTY_TOTAL,
                                                             SUM(a3.VALUEDECIMAL) AS QTYSALIN,
                                                             s.STDRAJUT,
-                                                            CAST(a9.VALUEDECIMAL AS INT) || '''''X' || CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE_DIAMETER
+                                                            CAST(a9.VALUEDECIMAL AS INT) || '''''X' || CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE_DIAMETER,
+                                                            CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE
                                                         FROM
                                                             PRODUCTIONDEMAND p
                                                         LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'MachineNoCode'
@@ -523,6 +524,7 @@ class MpsController extends Controller
                         ELSE 'Tidak Ada PO'
                     END AS STATUSMESIN,
                     CAST(a9.VALUEDECIMAL AS INT) || '''''X' || CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE_DIAMETER,
+                    CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE,
                     STDR.STDRAJUT AS STDRAJUT
                 FROM 
                     ITXVIEWKNTORDER itx
