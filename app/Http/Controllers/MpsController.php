@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use \DateTime;
+use Carbon\Carbon;
 
 class MpsController extends Controller
 {
@@ -19,31 +20,31 @@ class MpsController extends Controller
     }
 
     // public function index()
-    // {
-    //     $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
+        // {
+        //     $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
 
-    //     $dataDB2 = DB::connection('DB2')->select("
-    //         SELECT
-    //             KDMC,
-    //             PRODUCTIONDEMANDCODE,
-    //             STATUSMESIN,
-    //             TGL_START,
-    //             TGLDELIVERY,
-    //             ESTIMASI_SELESAI,
-    //             SUBCODE01,
-    //             SUBCODE02,
-    //             SUBCODE03,
-    //             SUBCODE04
-    //         FROM ITXTEMP_SCHEDULE_KNT
-    //     ");
+        //     $dataDB2 = DB::connection('DB2')->select("
+        //         SELECT
+        //             KDMC,
+        //             PRODUCTIONDEMANDCODE,
+        //             STATUSMESIN,
+        //             TGL_START,
+        //             TGLDELIVERY,
+        //             ESTIMASI_SELESAI,
+        //             SUBCODE01,
+        //             SUBCODE02,
+        //             SUBCODE03,
+        //             SUBCODE04
+        //         FROM ITXTEMP_SCHEDULE_KNT
+        //     ");
 
-    //     return response()->json([
-    //         'status' => true,
-    //         'message' => 'Succes',
-    //         'dataMesin' => $dataMesin,
-    //         'dataNow' => $dataDB2,
-    //         'test' => 'test'
-    //     ]);
+        //     return response()->json([
+        //         'status' => true,
+        //         'message' => 'Succes',
+        //         'dataMesin' => $dataMesin,
+        //         'dataNow' => $dataDB2,
+        //         'test' => 'test'
+        //     ]);
     // }
 
     public function index()
@@ -62,9 +63,16 @@ class MpsController extends Controller
                 SUBCODE01,
                 SUBCODE02,
                 SUBCODE03,
-                SUBCODE04
+                SUBCODE04,
+                QTY_SISA,
+                STANDAR_RAJUT,
+                QTY_ORDER
             FROM ITXTEMP_SCHEDULE_KNT
             WHERE ESTIMASI_SELESAI IS NOT NULL
+            ORDER BY 
+                KDMC,
+                CASE WHEN TGLMULAI IS NULL THEN 1 ELSE 0 END,
+                TGLMULAI ASC
         ");
 
         // Group berdasarkan mesin
@@ -79,46 +87,73 @@ class MpsController extends Controller
         }
 
         $finalData = [];
-         foreach ($grouped as $kdmc => $rows) {
-    usort($rows, function ($a, $b) {
-        $aDate = $a->tglmulai ?? $a->tgl_start ?? $a->estimasi_selesai;
-        $bDate = $b->tglmulai ?? $b->tgl_start ?? $b->estimasi_selesai;
-        return strtotime($aDate) <=> strtotime($bDate);
-    });
-
-    $lastEstimasi = null;
-
-    foreach ($rows as $row) {
-        // Ambil tanggal mulai: prioritas ke tglmulai
-        $rawStartStr = $row->tglmulai ?? $row->tgl_start;
-        $rawStart = $rawStartStr ? new DateTime($rawStartStr) : null;
-        $est = new DateTime($row->estimasi_selesai);
-
-        if (!$rawStart || ($lastEstimasi && $rawStart <= $lastEstimasi)) {
-            $start = $lastEstimasi ? (clone $lastEstimasi)->modify('+1 day') : new DateTime();
-            $durasi = max(1, $est->diff($rawStart ?? new DateTime())->days);
-            $est = (clone $start)->modify("+$durasi days");
-        } else {
-            $start = $rawStart;
+        foreach ($grouped as $kdmc => $rows) {
+            usort($rows, function ($a, $b) {
+                $aDate = $a->tglmulai ?? $a->tgl_start ?? $a->estimasi_selesai;
+                $bDate = $b->tglmulai ?? $b->tgl_start ?? $b->estimasi_selesai;
+                return strtotime($aDate) <=> strtotime($bDate);
+            });
+        
+            $lastEstimasi = null;
+        
+            foreach ($rows as $row) {
+                $rawStartStr = $row->tglmulai ?? $row->tgl_start;
+                $rawStart = $rawStartStr ? new DateTime($rawStartStr) : null;
+                $est = new DateTime($row->estimasi_selesai);
+            
+                if (!$rawStart || ($lastEstimasi && $rawStart <= $lastEstimasi)) {
+                    $start = $lastEstimasi ? (clone $lastEstimasi)->modify('+1 day') : new DateTime();
+                    $durasi = max(1, $est->diff($rawStart ?? new DateTime())->days);
+                    $est = (clone $start)->modify("+$durasi days");
+                } else {
+                    $start = $rawStart;
+                }
+            
+                $lastEstimasi = clone $est;
+            
+                $finalData[] = (object)[
+                    'kdmc' => $row->kdmc,
+                    'productiondemandcode' => $row->productiondemandcode,
+                    'statusmesin' => $row->statusmesin,
+                    'tgl_start' => $start->format('Y-m-d'),
+                    'estimasi_selesai' => $est->format('Y-m-d'),
+                    'tgl_delivery' => $row->tgldelivery,
+                    'tgl_mulai' => $row->tglmulai,
+                    'subcode01' => $row->subcode01,
+                    'subcode02' => $row->subcode02,
+                    'subcode03' => $row->subcode03,
+                    'subcode04' => $row->subcode04,
+                    'qty_sisa' => number_format((float)$row->qty_sisa, 2, '.', ''),
+                    // 'qty_sisa' => $row->qty_sisa,
+                    // 'standar_rajut' => $row->standar_rajut,
+                    'standar_rajut' => number_format((float)$row->standar_rajut, 2, '.', ''),
+                    'qty_order' => number_format((float)$row->qty_order, 2, '.', ''),
+                ];
+            }
         }
 
-        $lastEstimasi = clone $est;
-
-        $finalData[] = (object)[
-            'kdmc' => $row->kdmc,
-            'productiondemandcode' => $row->productiondemandcode,
-            'statusmesin' => $row->statusmesin,
-            'tgl_start' => $start->format('Y-m-d'),
-            'estimasi_selesai' => $est->format('Y-m-d'),
-            'tgl_delivery' => $row->tgldelivery,
-            'tgl_mulai' => $row->tglmulai,
-            'subcode01' => $row->subcode01,
-            'subcode02' => $row->subcode02,
-            'subcode03' => $row->subcode03,
-            'subcode04' => $row->subcode04,
-        ];
-    }
-}
+        foreach ($dataMesin as $mesin) {
+            $spDetail = DB::connection('sqlsrv')->select('EXEC sp_get_mesin_detail ?', [$mesin->mesin_code]);
+            foreach ($spDetail as $row) {
+                $finalData[] = (object)[
+                    'kdmc' => $row->kdmc,
+	                'productiondemandcode' => $row->productiondemandcode,
+	                'statusmesin' => $row->statusmesin,
+                    'tgl_start' => $row->tgl_start ? date('Y-m-d', strtotime($row->tgl_start)) : null,
+                    'estimasi_selesai' => $row->estimasi_selesai ? date('Y-m-d', strtotime($row->estimasi_selesai)) : null,
+                    'tgl_delivery' => $row->tgldelivery,
+                    'tgl_mulai' => $row->tglmulai,
+                    'subcode01' => $row->subcode01,
+                    'subcode02' => $row->subcode02,
+                    'subcode03' => $row->subcode03,
+                    'subcode04' => $row->subcode04,
+                    'qty_sisa' => number_format((float)$row->qty_sisa, 2, '.', ''),
+                    'qty_sisa' => $row->qty_sisa,
+                    'standar_rajut' => number_format((float)$row->standar_rajut, 2, '.', ''),
+                    'qty_order' => number_format((float)$row->qty_order, 2, '.', '')
+                ];
+            }
+        }
         return response()->json([
             'status' => true,
             'message' => 'Success',
@@ -127,45 +162,112 @@ class MpsController extends Controller
         ]);
     }
 
-
     public function loadPoAndFor()
     {
-        $dataPo = DB::connection('DB2')->select("
-            SELECT
-                TRIM(p.CODE) AS CODE,
-                a2.VALUESTRING AS NO_MESIN, 
-                p.ORDERDATE,
-                a5.VALUEDATE AS TGL_START,
-            	a4.VALUEDATE AS TGLDELIVERY,
-                a2.VALUESTRING AS STATUSRMP,
-                TRIM(p.SUBCODE02) AS SUBCODE02,
-                TRIM(p.SUBCODE03) AS SUBCODE03,
-                TRIM(p.SUBCODE04) AS SUBCODE04,
-                DECIMAL(SUM(p.USERPRIMARYQUANTITY), 18, 2) AS QTY_TOTAL,
-                SUM(a3.VALUEDECIMAL) AS QTYSALIN
-            FROM
-                PRODUCTIONDEMAND p
-            LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'MachineNoCode'
-            LEFT JOIN ADSTORAGE a2 ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'StatusRMP'
-            LEFT JOIN ADSTORAGE a3 ON p.ABSUNIQUEID = a3.UNIQUEID AND a3.NAMENAME = 'QtySalin'
-            LEFT JOIN ADSTORAGE a4 ON a4.UNIQUEID = p.ABSUNIQUEID AND a4.FIELDNAME = 'RMPGreigeReqDateTo'
-            LEFT JOIN ADSTORAGE a5 ON a5.UNIQUEID = p.ABSUNIQUEID AND a5.FIELDNAME = 'TglRencana'
-            WHERE
-                p.ITEMTYPEAFICODE = 'KGF'
-                AND p.PROGRESSSTATUS != '6'
-                AND a.VALUESTRING IS NULL
-                AND a2.VALUESTRING IN ('1', '4')
-            GROUP BY
-                p.CODE,
-                a.VALUESTRING,
-                a2.VALUESTRING,
-                p.ORDERDATE,
-                p.SUBCODE02,
-                p.SUBCODE03,
-                p.SUBCODE04,
-                a5.VALUEDATE,
-            	a4.VALUEDATE
-        ");
+        // $dataPo = DB::connection('DB2')->select("
+        //     SELECT
+        //         TRIM(p.CODE) AS CODE,
+        //         a2.VALUESTRING AS NO_MESIN, 
+        //         p.ORDERDATE,
+        //         a5.VALUEDATE AS TGL_START,
+        //     	a4.VALUEDATE AS TGLDELIVERY,
+        //         a2.VALUESTRING AS STATUSRMP,
+        //         TRIM(p.SUBCODE02) AS SUBCODE02,
+        //         TRIM(p.SUBCODE03) AS SUBCODE03,
+        //         TRIM(p.SUBCODE04) AS SUBCODE04,
+        //         DECIMAL(SUM(p.USERPRIMARYQUANTITY), 18, 2) AS QTY_TOTAL,
+        //         SUM(a3.VALUEDECIMAL) AS QTYSALIN
+        //     FROM
+        //         PRODUCTIONDEMAND p
+        //     LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'MachineNoCode'
+        //     LEFT JOIN ADSTORAGE a2 ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'StatusRMP'
+        //     LEFT JOIN ADSTORAGE a3 ON p.ABSUNIQUEID = a3.UNIQUEID AND a3.NAMENAME = 'QtySalin'
+        //     LEFT JOIN ADSTORAGE a4 ON a4.UNIQUEID = p.ABSUNIQUEID AND a4.FIELDNAME = 'RMPGreigeReqDateTo'
+        //     LEFT JOIN ADSTORAGE a5 ON a5.UNIQUEID = p.ABSUNIQUEID AND a5.FIELDNAME = 'TglRencana'
+        //     WHERE
+        //         p.ITEMTYPEAFICODE = 'KGF'
+        //         AND p.PROGRESSSTATUS != '6'
+        //         AND a.VALUESTRING IS NULL
+        //         AND a2.VALUESTRING IN ('1', '4')
+        //     GROUP BY
+        //         p.CODE,
+        //         a.VALUESTRING,
+        //         a2.VALUESTRING,
+        //         p.ORDERDATE,
+        //         p.SUBCODE02,
+        //         p.SUBCODE03,
+        //         p.SUBCODE04,
+        //         a5.VALUEDATE,
+        //     	a4.VALUEDATE
+        // ");
+
+        $dataPo = DB::connection('DB2')->select("WITH STDR AS (
+                                                        SELECT DISTINCT
+                                                            PRODUCT.SUBCODE02,
+                                                            PRODUCT.SUBCODE03,
+                                                            PRODUCT.SUBCODE04,
+                                                            (ADSTORAGE.VALUEDECIMAL * 24) AS STDRAJUT
+                                                        FROM PRODUCT PRODUCT
+                                                        LEFT JOIN ADSTORAGE ADSTORAGE 
+                                                            ON PRODUCT.ABSUNIQUEID = ADSTORAGE.UNIQUEID
+                                                        WHERE 
+                                                            ADSTORAGE.NAMENAME = 'ProductionRate'
+                                                            AND PRODUCT.ITEMTYPECODE = 'KGF'
+                                                            AND PRODUCT.COMPANYCODE = '100'
+                                                        )
+                                                        SELECT
+                                                            TRIM(p.CODE) AS CODE,
+                                                            a2.VALUESTRING AS NO_MESIN, 
+                                                            p.ORDERDATE,
+                                                            a5.VALUEDATE AS TGL_START,
+                                                            a4.VALUEDATE AS TGLDELIVERY,
+                                                            a2.VALUESTRING AS STATUSRMP,
+                                                            TRIM(p.SUBCODE02) AS SUBCODE02,
+                                                            TRIM(p.SUBCODE03) AS SUBCODE03,
+                                                            TRIM(p.SUBCODE04) AS SUBCODE04,
+                                                            ISNULL (a6.VALUEDECIMAL, 0) AS QTYOPOUT,
+                                                            DECIMAL(SUM(p.USERPRIMARYQUANTITY), 18, 2) + ISNULL (a6.VALUEDECIMAL, 0) AS QTY_TOTAL,
+                                                            SUM(a3.VALUEDECIMAL) AS QTYSALIN,
+                                                            s.STDRAJUT,
+                                                            CAST(a9.VALUEDECIMAL AS INT) || '''''X' || CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE_DIAMETER,
+                                                            CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE
+                                                        FROM
+                                                            PRODUCTIONDEMAND p
+                                                        LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'MachineNoCode'
+                                                        LEFT JOIN ADSTORAGE a2 ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'StatusRMP'
+                                                        LEFT JOIN ADSTORAGE a3 ON p.ABSUNIQUEID = a3.UNIQUEID AND a3.NAMENAME = 'QtySalin'
+                                                        LEFT JOIN ADSTORAGE a4 ON a4.UNIQUEID = p.ABSUNIQUEID AND a4.FIELDNAME = 'RMPGreigeReqDateTo'
+                                                        LEFT JOIN ADSTORAGE a5 ON a5.UNIQUEID = p.ABSUNIQUEID AND a5.FIELDNAME = 'TglRencana'
+                                                        LEFT JOIN ADSTORAGE a6 ON a6.UNIQUEID = p.ABSUNIQUEID AND a6.FIELDNAME = 'QtyOperOut'
+                                                        LEFT JOIN PRODUCT p2 ON p2.ITEMTYPECODE = p.ITEMTYPEAFICODE 
+                                                                            AND p2.SUBCODE01 = p.SUBCODE01 
+                                                                            AND p2.SUBCODE02 = p.SUBCODE02 
+                                                                            AND p2.SUBCODE03 = p.SUBCODE03 
+                                                                            AND p2.SUBCODE04 = p.SUBCODE04
+                                                        LEFT JOIN ADSTORAGE a8 ON a8.UNIQUEID = p2.ABSUNIQUEID AND a8.FIELDNAME = 'Gauge'
+                                                        LEFT JOIN ADSTORAGE a9 ON a9.UNIQUEID = p2.ABSUNIQUEID AND a9.FIELDNAME = 'Diameter'
+                                                        LEFT JOIN STDR s ON TRIM(p.SUBCODE02) = s.SUBCODE02
+                                                                        AND TRIM(p.SUBCODE03) = s.SUBCODE03
+                                                                        AND TRIM(p.SUBCODE04) = s.SUBCODE04
+                                                        WHERE
+                                                            p.ITEMTYPEAFICODE = 'KGF'
+                                                        AND p.PROGRESSSTATUS != '6'
+                                                        AND a.VALUESTRING IS NULL
+                                                        AND a2.VALUESTRING IN ('1', '4')
+                                                        GROUP BY
+                                                            p.CODE,
+                                                            a.VALUESTRING,
+                                                            a2.VALUESTRING,
+                                                            p.ORDERDATE,
+                                                            p.SUBCODE02,
+                                                            p.SUBCODE03,
+                                                            p.SUBCODE04,
+                                                            a5.VALUEDATE,
+                                                            a4.VALUEDATE,
+                                                            s.STDRAJUT,
+                                                            a6.VALUEDECIMAL,
+                                                            a9.VALUEDECIMAL,
+                                                            a8.VALUEDECIMAL");
 
         return response()->json([
             'status' => true,
@@ -176,103 +278,341 @@ class MpsController extends Controller
 
     public function loadMesinByPo(Request $request)
     {
-        $demand = $request['demand'];
+        $demand = $request->input('demand');
         $dataMesin = DB::connection('DB2')->select("
-            SELECT
-            	USERGENERICGROUP.CODE AS NO_MESIN,
-            	DMN.PRODUCTIONDEMANDCODE,
-                TRIM(DMN.SUBCODE02) || '-' || TRIM(DMN.SUBCODE03) || '-' || TRIM(DMN.SUBCODE04) AS ITEM_CODE,
-            	DMN.TGL_START,
-            	DMN.TGLDELIVERY
-            FROM
-            	DB2ADMIN.USERGENERICGROUP
-            LEFT OUTER JOIN (
-            	SELECT
-            		ADSTORAGE.VALUESTRING,
-            		AD1.VALUEDATE AS TGL_START,
-            		AD7.VALUEDATE AS TGLDELIVERY,
-            		ITXVIEWKNTORDER.*
-            	FROM
-            		ITXVIEWKNTORDER
-            	LEFT OUTER JOIN DB2ADMIN.PRODUCTIONDEMAND 
-            		ON PRODUCTIONDEMAND.CODE = ITXVIEWKNTORDER.PRODUCTIONDEMANDCODE
-            	LEFT OUTER JOIN DB2ADMIN.ADSTORAGE 
-            		ON ADSTORAGE.UNIQUEID = PRODUCTIONDEMAND.ABSUNIQUEID 
-            		AND ADSTORAGE.NAMENAME = 'MachineNo'
-            	LEFT OUTER JOIN DB2ADMIN.ADSTORAGE AD1 
-            		ON AD1.UNIQUEID = PRODUCTIONDEMAND.ABSUNIQUEID 
-            		AND AD1.FIELDNAME = 'TglRencana'
-            	LEFT OUTER JOIN DB2ADMIN.ADSTORAGE AD2 
-            		ON AD2.UNIQUEID = PRODUCTIONDEMAND.ABSUNIQUEID 
-            		AND AD2.FIELDNAME = 'RMPReqDate'
-            	LEFT OUTER JOIN DB2ADMIN.ADSTORAGE AD3 
-            		ON AD3.UNIQUEID = PRODUCTIONDEMAND.ABSUNIQUEID 
-            		AND AD3.FIELDNAME = 'QtySalin'
-            	LEFT OUTER JOIN DB2ADMIN.ADSTORAGE AD4 
-            		ON AD4.UNIQUEID = PRODUCTIONDEMAND.ABSUNIQUEID 
-            		AND AD4.FIELDNAME = 'QtyOperIn'
-            	LEFT OUTER JOIN DB2ADMIN.ADSTORAGE AD5 
-            		ON AD5.UNIQUEID = PRODUCTIONDEMAND.ABSUNIQUEID 
-            		AND AD5.FIELDNAME = 'QtyOperOut'
-            	LEFT OUTER JOIN DB2ADMIN.ADSTORAGE AD6 
-            		ON AD6.UNIQUEID = PRODUCTIONDEMAND.ABSUNIQUEID 
-            		AND AD6.FIELDNAME = 'StatusOper'
-            	LEFT OUTER JOIN DB2ADMIN.ADSTORAGE AD7 
-            		ON AD7.UNIQUEID = PRODUCTIONDEMAND.ABSUNIQUEID 
-            		AND AD7.FIELDNAME = 'RMPGreigeReqDateTo'
-            	LEFT OUTER JOIN DB2ADMIN.ADSTORAGE AD8 
-            		ON AD8.UNIQUEID = PRODUCTIONDEMAND.ABSUNIQUEID 
-            		AND AD8.FIELDNAME = 'StatusMesin'
-            	WHERE
-            		PRODUCTIONDEMAND.ITEMTYPEAFICODE = 'KGF'
-            		AND (PRODUCTIONDEMAND.PROGRESSSTATUS IN ('0','1','2') OR AD6.VALUESTRING = '1')
-            ) DMN 
-            	ON DMN.VALUESTRING = USERGENERICGROUP.CODE 	
-            WHERE
-            	USERGENERICGROUP.USERGENERICGROUPTYPECODE = 'MCK'
-            	AND USERGENERICGROUP.USERGENGROUPTYPECOMPANYCODE = '100'
-            	AND USERGENERICGROUP.OWNINGCOMPANYCODE = '100'
-            	AND USERGENERICGROUP.SHORTDESCRIPTION = (
-            		SELECT
-            			COALESCE(CAST(a3.VALUEDECIMAL AS INT), 0) || '''''X' || COALESCE(CAST(a2.VALUEDECIMAL AS INT), 0) || 'G'
-            		FROM
-            			PRODUCTIONDEMAND p
-            		LEFT JOIN PRODUCT p2 
-            			ON p2.ITEMTYPECODE = 'KGF'
-            			AND p2.SUBCODE01 = p.SUBCODE01 
-            			AND p2.SUBCODE02 = p.SUBCODE02 
-            			AND p2.SUBCODE03 = p.SUBCODE03 
-            			AND p2.SUBCODE04 = p.SUBCODE04
-            		LEFT JOIN ADSTORAGE a2 
-            			ON a2.UNIQUEID = p2.ABSUNIQUEID 
-            			AND a2.FIELDNAME = 'Gauge'
-            		LEFT JOIN ADSTORAGE a3 
-            			ON a3.UNIQUEID = p2.ABSUNIQUEID 
-            			AND a3.FIELDNAME = 'Diameter'
-            		WHERE 
-            			p.CODE = ?
-            			AND NOT p.PROGRESSSTATUS = '6'
-            			AND p.ITEMTYPEAFICODE = 'KGF'
-            			AND a2.VALUEDECIMAL != 0
-            			AND a3.VALUEDECIMAL != 0
-            		FETCH FIRST 1 ROW ONLY
-            	)
+        SELECT 
+        	ug.CODE AS NO_MESIN,
+        	CASE 
+        		WHEN LOCATE('X', ug.SHORTDESCRIPTION) > 0 
+        			THEN SUBSTR(ug.SHORTDESCRIPTION, LOCATE('X', ug.SHORTDESCRIPTION) + 1)
+        		WHEN LOCATE('x', ug.SHORTDESCRIPTION) > 0 
+        			THEN SUBSTR(ug.SHORTDESCRIPTION, LOCATE('x', ug.SHORTDESCRIPTION) + 1)
+        		ELSE ug.SHORTDESCRIPTION
+        	END AS SHORTDESCRIPTION_CLEAN,
+        	CASE
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'DO' THEN 'Double Knit'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'RI' THEN 'Rib'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'SO' THEN 'Single Knit'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'ST' THEN 'Single Knit'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'TF' THEN 'Fleece'
+        	    WHEN SUBSTRING(TRIM(r.CODE), 1,2) = 'TT' THEN 'Fleece'
+        	END AS jenis,
+        	CAST(a2.VALUEDECIMAL AS INT) AS GUIGE,
+        	ug.LONGDESCRIPTION
+        FROM DB2ADMIN.USERGENERICGROUP ug
+        LEFT JOIN RESOURCES r ON r.CODE = ug.CODE
+        LEFT JOIN DB2ADMIN.PRODUCTIONDEMAND p ON p.CODE = ?
+        LEFT JOIN DB2ADMIN.PRODUCT p2 
+        	ON p2.ITEMTYPECODE = 'KGF'
+        	AND p2.SUBCODE01 = p.SUBCODE01 
+        	AND p2.SUBCODE02 = p.SUBCODE02 
+        	AND p2.SUBCODE03 = p.SUBCODE03 
+        	AND p2.SUBCODE04 = p.SUBCODE04
+        LEFT JOIN DB2ADMIN.ADSTORAGE a2 
+        	ON a2.UNIQUEID = p2.ABSUNIQUEID AND a2.FIELDNAME = 'Gauge'
+        LEFT JOIN DB2ADMIN.ADSTORAGE a3 
+        	ON a3.UNIQUEID = p2.ABSUNIQUEID AND a3.FIELDNAME = 'Diameter'
+        WHERE 
+        	ug.USERGENERICGROUPTYPECODE = 'MCK'
+        	AND p.PROGRESSSTATUS != '6'
+        	AND p.ITEMTYPEAFICODE = 'KGF'
+        	AND a2.VALUEDECIMAL != 0
+        	AND a3.VALUEDECIMAL != 0
+        	AND (
+        		CASE 
+        			WHEN LOCATE('X', ug.SHORTDESCRIPTION) > 0 
+        				THEN SUBSTR(ug.SHORTDESCRIPTION, LOCATE('X', ug.SHORTDESCRIPTION) + 1)
+        			WHEN LOCATE('x', ug.SHORTDESCRIPTION) > 0 
+        				THEN SUBSTR(ug.SHORTDESCRIPTION, LOCATE('xb', ug.SHORTDESCRIPTION) + 1)
+        			ELSE ug.SHORTDESCRIPTION
+        		END = CAST(a2.VALUEDECIMAL AS INT) || 'G'
+        	)
         ", [$demand]);
+        $scheduleData = DB::connection('DB2')->select("
+        SELECT
+            KDMC,
+            PRODUCTIONDEMANDCODE,
+            TGL_START,
+            TGLMULAI,
+            TGLDELIVERY,
+            ESTIMASI_SELESAI,
+            SUBCODE02,
+            SUBCODE03,
+            SUBCODE04,
+            QTY_SISA,
+            STANDAR_RAJUT,
+            QTY_ORDER
+        FROM ITXTEMP_SCHEDULE_KNT
+        WHERE ESTIMASI_SELESAI IS NOT NULL
+        ");
+        $scheduleGrouped = collect($scheduleData)->groupBy(fn($row) => trim($row->kdmc));
+        $finalData = [];
+
+        foreach ($dataMesin as $mesin) {
+        $noMesin = trim($mesin->no_mesin);
+
+        // Data dari SP (tersedia demand terakhir)
+        $spResults = DB::connection('sqlsrv')->select("EXEC sp_get_mesin_tersedia ?", [$noMesin]);
+        $spData = $spResults[0] ?? null;
+
+        $productionDemandCodes = [];
+        $bookedDates = [];
+        $itemCodeAwal = null;
+        $tglStartAwal = null;
+        $tglDeliveryAwal = null;
+
+        // Ambil dari ITXTEMP_SCHEDULE_KNT
+        $schedules = $scheduleGrouped->get($noMesin) ?? collect();
+        foreach ($schedules as $index => $schedule) {
+            $start = \Carbon\Carbon::parse($schedule->tgl_start)->format('Y-m-d');
+            $end = \Carbon\Carbon::parse($schedule->estimasi_selesai)->format('Y-m-d');
+
+            $dates = collect(range(strtotime($start), strtotime($end), 86400))
+                ->map(fn($ts) => date('Y-m-d', $ts))->toArray();
+
+            $bookedDates = array_merge($bookedDates, $dates);
+            $productionDemandCodes[] = trim($schedule->productiondemandcode);
+
+            if ($index === 0) {
+                $itemCodeAwal = trim($schedule->subcode02 . '-' . $schedule->subcode03 . '-' . $schedule->subcode04);
+                $tglStartAwal = $schedule->tgl_start;
+                $tglDeliveryAwal = $schedule->estimasi_selesai;
+            }
+        }
+
+        // Tambahkan dari SP (jika belum ada)
+        if ($spData?->productiondemandcode) {
+            $spPDC = trim($spData->productiondemandcode);
+            if (!in_array($spPDC, $productionDemandCodes)) {
+                $spStart = \Carbon\Carbon::parse($spData->start_date)->format('Y-m-d');
+                $spEnd = \Carbon\Carbon::parse($spData->end_date)->format('Y-m-d');
+
+                $datesSP = collect(range(strtotime($spStart), strtotime($spEnd), 86400))
+                    ->map(fn($ts) => date('Y-m-d', $ts))->toArray();
+
+                $bookedDates = array_merge($bookedDates, $datesSP);
+                $productionDemandCodes[] = $spPDC;
+            }
+        }
+
+        // Final merge and clean
+        $bookedDates = array_values(array_unique($bookedDates));
+        sort($bookedDates);
+
+        $finalData[] = [
+            'no_mesin' => $noMesin,
+            'productiondemandcode' => $productionDemandCodes,
+            'item_code' => $itemCodeAwal,
+            'tgl_start' => $tglStartAwal,
+            'tgldelivery' => $tglDeliveryAwal,
+            'storage' => $spData->mesin_storage ?? null,
+            'nama_mesin' => $spData->nama_mesin ?? null,
+            'jenis' => $spData->jenis ?? null,
+            'item_code_terakhir' => $spData->item_code ?? null,
+            'end_date_terakhir' => $spData->end_date ?? null,
+            'booked_dates' => $bookedDates
+        ];
+        }
+        return response()->json([
+            'status' => true,
+            'message' => 'Success',
+            'dataMesin' => $finalData
+        ]);
+    }
+
+    public function loadStatusMesin(Request $request)
+    {
+        $demand = $request->input('demand');
+        if (!is_array($demand) || empty($demand)) {
+            return response()->json(['status' => false, 'message' => 'Demand harus berupa array dan tidak kosong']);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($demand), '?'));
+        $query = "WITH JML251 AS (
+                    SELECT
+                        DEMANDCODE,
+                        COUNT(WEIGHTREALNET) AS JML,
+                        SUM(WEIGHTREALNET) AS JQTY
+                    FROM ELEMENTSINSPECTION
+                    WHERE ELEMENTITEMTYPECODE = 'KGF'
+                        AND COMPANYCODE = '100'
+                    GROUP BY DEMANDCODE
+                ),
+                JML25PM AS (
+                    SELECT
+                        DEMANDCODE,
+                        COUNT(WEIGHTREALNET) AS JML
+                    FROM ELEMENTSINSPECTION
+                    WHERE ELEMENTITEMTYPECODE = 'KGF' 
+                        AND QUALITYREASONCODE = 'PM'
+                        AND COMPANYCODE = '100'
+                    GROUP BY DEMANDCODE
+                ),
+                STDR AS (
+                    SELECT DISTINCT
+                        PRODUCT.SUBCODE02,
+                        PRODUCT.SUBCODE03,
+                        PRODUCT.SUBCODE04,
+                        (ADSTORAGE.VALUEDECIMAL * 24) AS STDRAJUT
+                    FROM DB2ADMIN.PRODUCT PRODUCT
+                    LEFT JOIN DB2ADMIN.ADSTORAGE ADSTORAGE ON PRODUCT.ABSUNIQUEID = ADSTORAGE.UNIQUEID
+                    WHERE 
+                        ADSTORAGE.NAMENAME = 'ProductionRate'
+                        AND PRODUCT.ITEMTYPECODE = 'KGF'
+                        AND PRODUCT.COMPANYCODE = '100'
+                ),
+                KGPAKAI AS (
+                        SELECT 
+                            PRODUCTIONRESERVATION.PRODUCTIONORDERCODE,
+                            SUM(PRODUCTIONRESERVATION.USEDBASEPRIMARYQUANTITY) AS KGPAKAI
+                        FROM DB2ADMIN.PRODUCTIONRESERVATION
+                        LEFT JOIN DB2ADMIN.FULLITEMKEYDECODER 
+                            ON PRODUCTIONRESERVATION.FULLITEMIDENTIFIER = FULLITEMKEYDECODER.IDENTIFIER
+                        GROUP BY PRODUCTIONRESERVATION.PRODUCTIONORDERCODE
+                    )
+                SELECT
+                    itx.CODE,
+                    itx.PRODUCTIONORDERCODE,
+                    itx.PROGRESSSTATUS,
+                    itx.SUBCODE01,
+                    itx.SUBCODE02,
+                    itx.SUBCODE03,
+                    itx.SUBCODE04,
+                    TRIM(a2.VALUESTRING) AS StatusM,
+                    COALESCE(a7.VALUEDATE, CURRENT_DATE) AS tgl_start,
+                    a6.VALUEDATE AS tgl_delivery,
+                    -- DATE(CURRENT_DATE) + 
+                    --     INT(
+                    --         (
+                    --             (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
+                    --             (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
+                    --             COALESCE(j251.JQTY, 0.00)
+                    --         ) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)
+                    --     ) DAYS AS ESTIMASI_SELESAI,
+                    VARCHAR_FORMAT(
+                        DATE(a7.VALUEDATE) + 
+                            CEILING(
+                                CAST((COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) AS DECIMAL) / NULLIF(ROUND(STDR.STDRAJUT, 0), 0)) DAYS - 1 DAYS, 'YYYY-MM-DD' ) AS ESTIMASI_SELESAI,
+                        COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00) AS QTY_ORDER,
+                        (COALESCE(itx.BASEPRIMARYQUANTITY, 0.00) + COALESCE(a5.VALUEDECIMAL, 0.00)) -
+                        (COALESCE(a3.VALUEDECIMAL, 0.00) + COALESCE(a4.VALUEDECIMAL, 0.00)) -
+                        COALESCE(j251.JQTY, 0.00)
+                        AS QTY_SISA,
+                    CASE 
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND COALESCE(pm.JML, 0) > 0 
+                            THEN 'Perbaikan Mesin'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '2' 
+                            THEN 'Antri Mesin'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '4' 
+                            THEN 'Habis Benang'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '5' 
+                            THEN 'Tunggu Tes Quality'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '3' 
+                            THEN 'Hold'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '1' AND COALESCE(ROUND(KGPAKAI.KGPAKAI), 0) = 0 
+                            THEN 'Tunggu Pasang Benang'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '1' AND COALESCE(ROUND(KGPAKAI.KGPAKAI), 0) > 0 AND COALESCE(j251.JML, 0) = 0
+                            THEN 'Tunggu Setting'
+                        WHEN (itx.PROGRESSSTATUS = '6' AND a.VALUESTRING = '1' AND COALESCE(j251.JML, 0) > 0)
+                            THEN 'Sedang Jalan Oper PO'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) IN ('0', '1') AND COALESCE(j251.JML, 0) > 0
+                            THEN 'Sedang Jalan'
+                        WHEN COALESCE(itx.PRODUCTIONORDERCODE, '') = '' AND itx.CODE <> ''
+                            THEN 'Planned'
+                        WHEN (itx.PROGRESSSTATUS = '2' OR a.VALUESTRING = '1') AND TRIM(a2.VALUESTRING) = '0' AND COALESCE(ROUND(KGPAKAI.KGPAKAI), 0) = 0
+                            THEN 'ProdOrdCreate'
+                        ELSE 'Tidak Ada PO'
+                    END AS STATUSMESIN,
+                    CAST(a9.VALUEDECIMAL AS INT) || '''''X' || CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE_DIAMETER,
+                    CAST(a8.VALUEDECIMAL AS INT) || 'G'  AS GAUGE,
+                    STDR.STDRAJUT AS STDRAJUT
+                FROM 
+                    ITXVIEWKNTORDER itx
+                LEFT JOIN PRODUCTIONDEMAND p ON p.CODE = itx.CODE
+                LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'StatusOper'
+                LEFT JOIN ADSTORAGE a2 ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'StatusMesin'
+                LEFT JOIN ADSTORAGE a3 ON a3.UNIQUEID = p.ABSUNIQUEID AND a3.FIELDNAME = 'QtySalin'
+                LEFT JOIN ADSTORAGE a4 ON a4.UNIQUEID = p.ABSUNIQUEID AND a4.FIELDNAME = 'QtyOperIn'
+                LEFT JOIN ADSTORAGE a5 ON a5.UNIQUEID = p.ABSUNIQUEID AND a5.FIELDNAME = 'QtyOperOut'
+                LEFT JOIN ADSTORAGE a6 ON a6.UNIQUEID = p.ABSUNIQUEID AND a6.FIELDNAME = 'RMPGreigeReqDateTo'
+                LEFT JOIN ADSTORAGE a7 ON a7.UNIQUEID = p.ABSUNIQUEID AND a7.FIELDNAME = 'TglRencana'
+                LEFT JOIN PRODUCT p2 ON p2.ITEMTYPECODE = p.ITEMTYPEAFICODE 
+                                    AND p2.SUBCODE01 = p.SUBCODE01 
+                                    AND p2.SUBCODE02 = p.SUBCODE02 
+                                    AND p2.SUBCODE03 = p.SUBCODE03 
+                                    AND p2.SUBCODE04 = p.SUBCODE04
+                LEFT JOIN ADSTORAGE a8 ON a8.UNIQUEID = p2.ABSUNIQUEID AND a8.FIELDNAME = 'Gauge'
+                LEFT JOIN ADSTORAGE a9 ON a9.UNIQUEID = p2.ABSUNIQUEID AND a9.FIELDNAME = 'Diameter'
+                LEFT JOIN ELEMENTSINSPECTION e2 ON e2.DEMANDCODE = p.CODE AND e2.ELEMENTITEMTYPECODE = 'KGF' AND e2.COMPANYCODE = '100'
+                LEFT JOIN JML251 j251 ON j251.DEMANDCODE = itx.CODE
+                LEFT JOIN JML25PM pm ON pm.DEMANDCODE = itx.CODE
+                LEFT JOIN KGPAKAI ON KGPAKAI.PRODUCTIONORDERCODE = itx.PRODUCTIONORDERCODE
+                LEFT JOIN STDR ON STDR.SUBCODE02 = itx.SUBCODE02 AND STDR.SUBCODE03 = itx.SUBCODE03 AND STDR.SUBCODE04 = itx.SUBCODE04
+                WHERE 
+                    p.CODE IN ($placeholders)
+                GROUP BY
+                    itx.CODE,
+                    itx.PROGRESSSTATUS,
+                    itx.PRODUCTIONORDERCODE,
+                    itx.SUBCODE01,
+                    itx.SUBCODE02,
+                    itx.SUBCODE03,
+                    itx.SUBCODE04,
+                    p.ABSUNIQUEID,
+                    a.VALUESTRING,
+                    a2.VALUESTRING,
+                    j251.JML,
+                    j251.JQTY,
+                    pm.JML,
+                    a3.VALUEDECIMAL,
+                    a4.VALUEDECIMAL,
+                    a5.VALUEDECIMAL,
+                    a6.VALUEDATE,
+                    a7.VALUEDATE,
+                    itx.BASEPRIMARYQUANTITY,
+                    KGPAKAI.KGPAKAI,
+                    STDR.STDRAJUT,
+                    a8.VALUEDECIMAL,
+                    a9.VALUEDECIMAL";
+
+        $dataMesin = DB::connection('DB2')->select($query, $demand);
+
+        // foreach ($dataMesin as &$row) {
+        //     foreach (['qty_order', 'qty_sisa', 'stdrajut'] as $field) {
+        //         if (isset($row->$field)) {
+        //             $row->$field = rtrim(rtrim(number_format((float)$row->$field, 6, '.', ''), '0'), '.');
+        //         }
+        //     }
+        // }
 
         return response()->json([
             'status' => true,
-            'message' => 'Succes',
+            'message' => 'Success',
             'dataMesin' => $dataMesin
         ]);
     }
 
     public function saveScheduleMesin(Request $request)
     {
-        $demandCode   = $request->demand;
-        $tglStart     = $request->tgl_start;
-        $tglDelivery  = $request->tgl_delivery;
-        $mesinCode    = $request->mesin_code;
-        $status       = $request->status;
+
+        $qty        = (float) $request->input('demand.qty');
+        $std_Rajut  = (float) $request->input('demand.std_Rajut');
+        $demandCode = $request->input('demand.demand');
+        $item_code  = $request->input('demand.item_code');
+        $tglStart   = $request->input('demand.tgl_start');
+        $tglDelivery= $request->input('demand.tgl_delivery');
+        $mesinCode  = $request->input('demand.mesin_code');
+        $status     = $request->input('demand.status');
+        $rec_user     = $request->input('demand.name');
+        $user_dept     = $request->input('demand.dept');
+
+        if ($std_Rajut <= 0) {
+            return response()->json(['success' => false, 'message' => 'Std rajut tidak boleh 0']);
+        }
+
+        $hariProduksi = ceil($qty / $std_Rajut);
+        $tglEnd = Carbon::parse($tglStart)->addDays($hariProduksi)->subDay();
+        $tglEndFormatted = $tglEnd->toDateString();
 
         try {
             $demandData = DB::connection('DB2')->selectOne("
@@ -287,10 +627,28 @@ class MpsController extends Controller
 
             DB::connection('DB2')->beginTransaction();
 
-            // Helper function untuk insert/update
             $this->insertOrUpdateADStorage($absId, 'TglRencana', 'TglRencana', 0, 3, null, $tglStart);
             $this->insertOrUpdateADStorage($absId, 'MachineNo', 'MachineNoCode', 1, 0, $mesinCode, null);
             $this->insertOrUpdateADStorage($absId, 'RMPGreigeReqDateTo', 'RMPGreigeReqDateTo', 0, 3, null, $tglDelivery);
+
+            $result = DB::connection('sqlsrv')->statement('EXEC sp_insert_schedule ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?', [
+                $rec_user,
+                $mesinCode,
+                $demandCode,
+                $item_code,
+                $std_Rajut,
+                $qty,
+                $tglStart,
+                $tglEndFormatted,
+                $tglDelivery,
+                $status,
+                $user_dept
+            ]);
+
+            if (!$result) {
+                DB::connection('DB2')->rollBack();
+                return response()->json(['success' => false, 'message' => 'Gagal menyimpan ke SQL Server']);
+            }
 
             DB::connection('DB2')->commit();
 
@@ -298,6 +656,62 @@ class MpsController extends Controller
         } catch (\Exception $e) {
             DB::connection('DB2')->rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+    
+    public function deleteScheduleMesin(Request $request)
+    {
+        try {
+            $demandCode = $request->input('demand.demand');
+            $rec_user   = $request->input('demand.name');
+
+            // EKSEKUSI SP DI SQL Server
+                $result = DB::connection('sqlsrv')->statement('EXEC sp_delete_schedule ?,?', [
+                    $rec_user,
+                    $demandCode
+                ]);
+
+                if (!$result) {
+                    DB::connection('DB2')->rollBack();
+                    return response()->json(['success' => false, 'message' => 'Gagal menyimpan ke SQL Server']);
+                }
+            // EKSEKUSI SP DI SQL Server
+
+            // EKSEKUSI DI DB2 
+                $resultDB2 = DB::connection('DB2')->selectOne("SELECT ABSUNIQUEID
+                                                        FROM PRODUCTIONDEMAND
+                                                        WHERE CODE = ?", [$demandCode]);
+                $absUniqueId = $resultDB2->absuniqueid;
+
+                // STEP 2 
+                DB::connection('DB2')->delete("DELETE FROM ADSTORAGE
+                                                WHERE UNIQUEID = ?
+                                                AND FIELDNAME = ?
+                ", [$absUniqueId, 'MachineNoCode']);
+
+                // // STEP 3
+                DB::connection('DB2')->delete("DELETE FROM ADSTORAGE
+                                                WHERE UNIQUEID = ?
+                                                AND FIELDNAME = ?
+                ", [$absUniqueId, 'TglRencana']);
+
+                // // STEP 4
+                DB::connection('DB2')->delete("DELETE FROM ADSTORAGE
+                                                WHERE UNIQUEID = ?
+                                                AND FIELDNAME = ?
+                ", [$absUniqueId, 'RMPGreigeReqDateTo']);
+            // EKSEKUSI DI DB2 
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data berhasil dihapus di SQL Server & DB2'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTrace()
+            ], 500);
         }
     }
 

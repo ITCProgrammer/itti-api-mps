@@ -16,12 +16,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/getMesinData', [MpsController::class, 'index']);
     Route::get('/getPoAndFor', [MpsController::class, 'loadPoAndFor']);
     Route::get('/getMesinByPo', [MpsController::class, 'loadMesinByPo']);
+    Route::post('/postStatusMesin', [MpsController::class, 'loadStatusMesin']);
     Route::post('/postSchedule', [MpsController::class, 'saveScheduleMesin']);
+    Route::post('/deleteSchedule', [MpsController::class, 'deleteScheduleMesin']);
 
     Route::prefix('schedule-plan')->name('schedule.plan.')->group(function () {
         Route::get('/', [SchedulePlanController::class, 'index'])->name('index');
         Route::post('/import', [SchedulePlanController::class, 'import'])->name('import');
         Route::get('/data-detail', [SchedulePlanController::class, 'dataDetail'])->name('data.detail');
     });
-
 });
