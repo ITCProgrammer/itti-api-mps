@@ -7,8 +7,11 @@ use Maatwebsite\Excel\Row;
 
 class SchedulePlanImport implements OnEachRow
 {
+    protected $lastMesin = null;
+
     public function onRow(Row $row)
     {
+
         // Lewati baris pertama (judul kolom)
         if ($row->getIndex() === 1) {
             return;
@@ -16,13 +19,14 @@ class SchedulePlanImport implements OnEachRow
 
         $row = $row->toArray();
 
-        // Lewati jika kolom-kolom utama kosong
-        if (empty($row[0]) || empty($row[1]) || empty($row[2]) || empty($row[3])) {
-            return;
+        if (! empty($row[0])) {
+            $this->lastMesin = $row[0];
         }
 
+        $mesin = $this->lastMesin;
+
         DB::connection('DB2')->table('SCHEDULE_PLAN_MQM')->insert([
-            'mesin'                       => $row[0],
+            'mesin'                       => $mesin,
             'production_demand'           => $row[1],
             'production_order'            => $row[2],
             'planned_process'             => $row[3],
