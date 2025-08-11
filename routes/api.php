@@ -18,7 +18,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/getMesinByPo', [MpsController::class, 'loadMesinByPo']);
     Route::post('/postStatusMesin', [MpsController::class, 'loadStatusMesin']);
     Route::post('/postSchedule', [MpsController::class, 'saveScheduleMesin']);
+    Route::post('/postScheduleForcast', [MpsController::class, 'saveScheduleForcast']);
     Route::post('/deleteSchedule', [MpsController::class, 'deleteScheduleMesin']);
+
+    Route::get('/getForcast', [MpsController::class, 'loadForcast']);
+    Route::get('/getDetailForcast', [MpsController::class, 'loadDetailForcast']);
+    Route::post('/getDetailStock', [MpsController::class, 'getStockDetail']);
+    Route::get('/getDetailData/{item_code}', [MpsController::class, 'getDetailData']);
+    Route::get('/getSearchData/{item_code}', [MpsController::class, 'getSearchData']);
+
 
     Route::prefix('schedule-plan')->name('schedule.plan.')->group(function () {
         Route::get('/', [SchedulePlanController::class, 'index'])->name('index');

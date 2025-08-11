@@ -9,15 +9,15 @@ use Carbon\Carbon;
 
 class MpsController extends Controller
 {
-    public function mesin()
-    {
-        $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
-        return response()->json([
-            'status' => true,
-            'message' => 'Succes',
-            'dataMesin' => $dataMesin,
-        ]);
-    }
+    // public function mesin()
+    // {
+    //     $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
+    //     return response()->json([
+    //         'status' => true,
+    //         'message' => 'Succes',
+    //         'dataMesin' => $dataMesin,
+    //     ]);
+    // }
 
     // public function index()
         // {
@@ -594,7 +594,6 @@ class MpsController extends Controller
 
     public function saveScheduleMesin(Request $request)
     {
-
         $qty        = (float) $request->input('demand.qty');
         $std_Rajut  = (float) $request->input('demand.std_Rajut');
         $demandCode = $request->input('demand.demand');
@@ -754,6 +753,436 @@ class MpsController extends Controller
                 $valueString,
                 $valueDate
             ]);
+        }
+    }
+
+
+    //Forcast
+    public function mesin()
+    {
+        // Ambil data mesin dari SP
+        $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
+    
+        // Ambil schedule dari tabel schedule_knitting_forecast
+        $scheduleData = DB::connection('sqlsrv')->table('schedule_knitting_forecast')
+            ->select(
+                'mesin_code',
+                'item_code',
+                'date_startplann',
+                'date_endplann'
+            )
+            ->whereNotNull('date_startplann')
+            ->whereNotNull('date_endplann')
+            ->get();
+            
+        // Grouping schedule berdasarkan mesin_code
+        $scheduleGrouped = collect($scheduleData)->groupBy(fn($row) => trim($row->mesin_code));
+            
+        $finalData = [];
+            
+        foreach ($dataMesin as $mesin) {
+            $mesinCode = trim($mesin->mesin_code);
+        
+            $bookedDates = [];
+            $itemCodes = [];
+        
+            $schedules = $scheduleGrouped->get($mesinCode) ?? collect();
+        
+            foreach ($schedules as $schedule) {
+                // Ambil rentang tanggal
+                $start = \Carbon\Carbon::parse($schedule->date_startplann)->format('Y-m-d');
+                $end = \Carbon\Carbon::parse($schedule->date_endplann)->format('Y-m-d');
+            
+                $dates = collect(range(strtotime($start), strtotime($end), 86400))
+                    ->map(fn($ts) => date('Y-m-d', $ts))
+                    ->toArray();
+            
+                $bookedDates = array_merge($bookedDates, $dates);
+            
+                // Kumpulkan item_code
+                $itemCodes[] = trim($schedule->item_code);
+            }
+        
+            // Bersihkan duplikat dan sort
+            $bookedDates = array_values(array_unique($bookedDates));
+            sort($bookedDates);
+        
+            $itemCodes = array_values(array_unique($itemCodes));
+        
+            $finalData[] = [
+                'mesin_code' => $mesinCode,
+                'mesin_storage' => $mesin->mesin_storage,
+                'nama_mesin' => $mesin->nama_mesin,
+                'jenis' => $mesin->jenis,
+                'item_code' => $itemCodes,
+                'booked_dates' => $bookedDates,
+            ];
+        }
+    
+        return response()->json([
+            'status' => true,
+            'message' => 'Success',
+            'dataMesin' => $finalData
+        ]);
+    }
+
+    public function loadForcast()
+    {
+        // $dataForcast = DB::connection('sqlsrv')->select('EXEC sp_get_forcast');
+        // collect($dataForcast)->map(function ($row) {
+        //     $uploadDate = \Carbon\Carbon::parse($row->upload_date);
+
+        //     DB::connection('sqlsrv')->statement('EXEC sp_insert_data_forecast ?, ?, ?, ?, ?', [
+        //         $row->item_code,
+        //         number_format((float) $row->total_qty_kg, 8, '.', ''),
+        //         number_format((float) $row->stdrajut, 8, '.', ''),
+        //         $row->delivery_date,
+        //         $uploadDate->toDateString()
+        //     ]);
+        // });
+        $summary = DB::connection('sqlsrv')->select('EXEC sp_get_list_forcast');
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Succes',
+            'dataForcast' => $summary
+        ]);
+    }
+
+    public function loadDetailForcast()
+    {
+        $dataForcast = DB::connection('sqlsrv')->select('EXEC sp_get_detail_forcast');
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Succes',
+            'dataForcast' => $dataForcast
+        ]);
+    }
+
+    public function getStockDetail(Request $request){
+        $itemCode = $request->input('itemCode');
+        $stock = $request->input('stock');
+
+        list($Code1, $Code2, $Code3) = explode('-', $itemCode);
+
+        $dataHeading = DB::connection('DB2')->select("
+            SELECT
+                COALESCE(p.ORIGDLVSALORDLINESALORDERCODE, '-') AS ORIGDLVSALORDLINESALORDERCODE,
+                COALESCE(s.STATISTICALGROUPCODE, '-') AS STATISTICALGROUPCODE,
+                COALESCE(b.LOGICALWAREHOUSECODE, '-') AS LOGICALWAREHOUSECODE,
+                COALESCE(SUM(BASEPRIMARYQUANTITYUNIT), 0) AS TotalStock
+            FROM
+              BALANCE b
+            LEFT JOIN PRODUCTIONDEMAND p ON p.CODE = b.LOTCODE
+            LEFT JOIN SALESORDER s ON s.CODE = p.ORIGDLVSALORDLINESALORDERCODE
+            WHERE
+                b.DECOSUBCODE02 = ?
+            	AND b.DECOSUBCODE03 = ?
+                AND b.DECOSUBCODE04 = ?
+              AND b.LOGICALWAREHOUSECODE IN ('M021', 'M502')
+            GROUP BY
+              p.ORIGDLVSALORDLINESALORDERCODE,
+              b.LOGICALWAREHOUSECODE,
+              s.STATISTICALGROUPCODE",
+        [$Code1, $Code2, $Code3]);
+
+        $dataDetail = DB::connection('DB2')->select("
+            SELECT
+                COALESCE(p.ORIGDLVSALORDLINESALORDERCODE, '-') AS ORIGDLVSALORDLINESALORDERCODE,
+                COALESCE(b.LOTCODE, '-') AS LOTCODE,
+                COALESCE(s.STATISTICALGROUPCODE, '-') AS STATISTICALGROUPCODE,
+                COALESCE(p.EXTERNALREFERENCE, '-') AS EXTERNALREFERENCE,
+                COALESCE(b.LOGICALWAREHOUSECODE, '-') AS LOGICALWAREHOUSECODE,
+                ROUND(COALESCE(SUM(BASEPRIMARYQUANTITYUNIT), 0), 2) AS Stock
+            FROM
+              BALANCE b
+            LEFT JOIN PRODUCTIONDEMAND p ON p.CODE = b.LOTCODE
+            LEFT JOIN SALESORDER s ON s.CODE = p.ORIGDLVSALORDLINESALORDERCODE
+            WHERE
+                b.DECOSUBCODE02 = ?
+            	AND b.DECOSUBCODE03 = ?
+                AND b.DECOSUBCODE04 = ?
+              AND b.LOGICALWAREHOUSECODE IN ('M021', 'M502')
+            GROUP BY
+              p.ORIGDLVSALORDLINESALORDERCODE,
+              b.LOTCODE,
+              s.STATISTICALGROUPCODE,
+              p.EXTERNALREFERENCE,
+              b.LOGICALWAREHOUSECODE",
+        [$Code1, $Code2, $Code3]);
+
+        $dataStock = DB::connection('DB2')->select("
+            SELECT
+                COALESCE(b.LOTCODE, '-') AS LOTCODE,
+                COALESCE(p.ORIGDLVSALORDLINESALORDERCODE, '-') AS ORIGDLVSALORDLINESALORDERCODE,
+                COALESCE(s.STATISTICALGROUPCODE, '-') AS STATISTICALGROUPCODE,
+                COALESCE(p.EXTERNALREFERENCE, '-') AS EXTERNALREFERENCE,
+                COALESCE(b.LOGICALWAREHOUSECODE, '-') AS LOGICALWAREHOUSECODE,
+                COALESCE(SUM(BASEPRIMARYQUANTITYUNIT), 0) AS Stock
+            FROM
+            	BALANCE b
+            LEFT JOIN PRODUCTIONDEMAND p ON p.CODE = b.LOTCODE 
+            LEFT JOIN SALESORDER s ON s.CODE = p.ORIGDLVSALORDLINESALORDERCODE 
+            WHERE
+            	b.DECOSUBCODE02 = ?
+            	AND b.DECOSUBCODE03 = ?
+                AND b.DECOSUBCODE04 = ?
+            	AND b.LOGICALWAREHOUSECODE IN ('M021', 'M502')
+            GROUP BY
+            	b.LOTCODE,
+            	p.ORIGDLVSALORDLINESALORDERCODE,
+            	s.STATISTICALGROUPCODE,
+            	p.EXTERNALREFERENCE,
+            	b.LOGICALWAREHOUSECODE",
+        [$Code1, $Code2, $Code3]);
+
+        return response()->json([
+            'dataHeading' => $dataHeading,
+            'dataDetail' => $dataDetail,
+            'dataStock' => $dataStock
+        ]);
+    }
+
+    public function getDetailData($itemCode){
+        $parts = explode('-', $itemCode);
+        if (count($parts) < 3) {
+            return response()->json([
+                'message' => 'Format item code tidak valid'
+            ], 400);
+        }
+
+        list($Code1, $Code2, $Code3) = $parts;
+
+        $schedules = DB::connection('sqlsrv')->select('EXEC sp_get_schedule_by_item_code ?', [$itemCode]);
+
+        $dataDB2 = DB::connection('DB2')->select("
+            SELECT
+            	a2.VALUEDATE AS RMP_REQ_TO,
+            	SUM(p.USERPRIMARYQUANTITY) AS QTY_TOTAL
+            FROM
+            	PRODUCTIONDEMAND p
+            LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'RMPReqDate'
+            LEFT JOIN ADSTORAGE a2 ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'RMPGreigeReqDateTo'
+            LEFT JOIN ADSTORAGE a3 ON a3.UNIQUEID = p.ABSUNIQUEID AND a3.FIELDNAME = 'OriginalPDCode'
+            WHERE
+                p.SUBCODE02 = ?
+                AND p.SUBCODE03 = ?
+                AND p.SUBCODE04 = ?
+                AND p.ITEMTYPEAFICODE = 'KGF'
+                AND a2.VALUEDATE > CAST(CURRENT DATE AS DATE)
+            	AND a3.VALUESTRING IS NULL
+            GROUP BY
+            	a2.VALUEDATE
+        ", [$Code1, $Code2, $Code3]);
+
+        $dataStock = DB::connection('DB2')->select("
+            SELECT
+            	SUM(BASEPRIMARYQUANTITYUNIT) as Stock
+            FROM
+            	BALANCE b
+            WHERE
+            	DECOSUBCODE02 = ?
+            	AND b.DECOSUBCODE03 = ?
+            	AND b.DECOSUBCODE04 = ?
+            	AND b.LOGICALWAREHOUSECODE IN ('M021', 'M502')",
+        [$Code1, $Code2, $Code3]);
+
+        $forecast = DB::connection('sqlsrv')->select(
+            'EXEC sp_get_forcast_by_subcode ?',
+            [$itemCode]
+        );
+
+        $stockPlann = DB::connection('sqlsrv')->select(
+            'EXEC sp_get_qtyplann_by_item_code ?',
+            [$itemCode]
+        );
+
+        return response()->json([
+            'item_code' => $itemCode,
+            'schedules' => $schedules,
+            'db2_data' => $dataDB2,
+            'stock_data' => $dataStock,
+            'forecast' => $forecast,
+            'stockPlann' => $stockPlann,
+        ]);
+    }
+
+    public function getSearchData($itemCode){
+        list($Code1, $Code2, $Code3) = explode('-', $itemCode);
+
+        $dataDB2 = DB::connection('DB2')->select("
+            SELECT
+                a2.VALUEDATE AS RMP_REQ_TO,
+                SUM(p.USERPRIMARYQUANTITY) AS QTY_TOTAL
+            FROM
+                PRODUCTIONDEMAND p
+            LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'RMPReqDate'
+            LEFT JOIN ADSTORAGE a2 ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'RMPGreigeReqDateTo'
+            LEFT JOIN ADSTORAGE a3 ON a3.UNIQUEID = p.ABSUNIQUEID AND a3.FIELDNAME = 'OriginalPDCode'
+            WHERE
+                p.SUBCODE02 = ? AND
+                p.SUBCODE03 = ? AND
+                p.SUBCODE04 = ? AND
+                p.ITEMTYPEAFICODE = 'KGF' AND
+                a2.VALUEDATE > CAST(CURRENT DATE AS DATE) AND
+                a3.VALUESTRING IS NULL
+            GROUP BY a2.VALUEDATE
+        ", [$Code1, $Code2, $Code3]);
+
+        $dataStock = DB::connection('DB2')->select("
+            SELECT
+                SUM(BASEPRIMARYQUANTITYUNIT) as Stock
+            FROM BALANCE b
+            WHERE
+                DECOSUBCODE02 = ? AND
+                b.DECOSUBCODE03 = ? AND
+                b.DECOSUBCODE04 = ? AND
+                b.LOGICALWAREHOUSECODE IN ('M021', 'M502')",
+        [$Code1, $Code2, $Code3]);
+
+        $forecast = DB::connection('mysql')->select("
+            SELECT
+                t.item_subcode2,
+                t.item_subcode3,
+                t.item_subcode4,
+                t.buy_month,
+                SUM(t.qty_kg) AS total_qty_kg
+            FROM tbl_upload_order t
+            WHERE 
+                t.item_subcode2 = ? AND
+                t.item_subcode3 = ? AND
+                t.item_subcode4 = ?
+            GROUP BY
+                t.item_subcode2,
+                t.item_subcode3,
+                t.item_subcode4,
+                t.buy_month
+        ", [$Code1, $Code2, $Code3]);
+
+        $stockPlann = DB::connection('sqlsrv')->select(
+            'EXEC sp_get_qtyplann_by_item_code ?',
+            [$itemCode]
+        );
+
+        return response()->json([
+            'db2_data' => $dataDB2,
+            'stock_data' => $dataStock,
+            'forecast' => $forecast,
+            'stockPlann' => $stockPlann,
+        ]);
+    }
+
+    // public function saveScheduleForcast(Request $request)
+    // {
+    //     $qty        = (float) $request->input('demand.qty');
+    //     $std_Rajut  = (float) $request->input('demand.std_Rajut');
+    //     $demandCode = $request->input('demand.demand');
+    //     $item_code  = $request->input('demand.item_code');
+    //     $tglStart   = $request->input('demand.tgl_start');
+    //     $tglDelivery= $request->input('demand.tgl_delivery');
+    //     $mesinCode  = $request->input('demand.mesin_code');
+    //     $status     = $request->input('demand.status');
+    //     $rec_user     = $request->input('demand.name');
+    //     $user_dept     = $request->input('demand.dept');
+
+    //     if ($std_Rajut <= 0) {
+    //         return response()->json(['success' => false, 'message' => 'Std rajut tidak boleh 0']);
+    //     }
+
+    //     $hariProduksi = ceil($qty / $std_Rajut);
+    //     $tglEnd = Carbon::parse($tglStart)->addDays($hariProduksi)->subDay();
+    //     $tglEndFormatted = $tglEnd->toDateString();
+
+    //     try {
+    //         $result = DB::connection('sqlsrv')->statement('EXEC sp_insert_schedule_forcast ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?', [
+    //             $rec_user,
+    //             $mesinCode,
+    //             $demandCode,
+    //             $item_code,
+    //             $std_Rajut,
+    //             $qty,
+    //             $tglStart,
+    //             $tglEndFormatted,
+    //             $tglDelivery,
+    //             $status,
+    //             $user_dept
+    //         ]);
+    //         if($result){
+    //             return response()->json(['success' => true]);
+    //         }
+    //     } catch (\Exception $e) {
+    //         return response()->json(['success' => false, 'message' => $e->getMessage()]);
+    //     }
+    // }
+
+    public function saveScheduleForcast(Request $request)
+    {
+        $qty         = (float) $request->input('demand.qty');
+        $stdRajut    = (float) $request->input('demand.std_Rajut');
+        $demandCode  = $request->input('demand.demand');
+        $itemCode    = $request->input('demand.item_code');
+        $tglStart    = $request->input('demand.tgl_start');
+        $tglDelivery = $request->input('demand.tgl_delivery');
+        $status      = $request->input('demand.status');
+        $recUser     = $request->input('demand.name');
+        $userDept    = $request->input('demand.dept');
+
+        $mesinCodes = $request->input('demand.mesin_code');
+
+        if (!is_array($mesinCodes) || count($mesinCodes) === 0) {
+            return response()->json(['success' => false, 'message' => 'Mesin belum dipilih']);
+        }
+
+        if ($stdRajut <= 0) {
+            return response()->json(['success' => false, 'message' => 'Std rajut tidak boleh 0']);
+        }
+
+        $jumlahMesin = count($mesinCodes);
+        $totalPerHari = $stdRajut * $jumlahMesin;
+
+        if ($totalPerHari <= 0) {
+            return response()->json(['success' => false, 'message' => 'Produksi per hari tidak valid']);
+        }
+
+        $hariProduksi = ceil($qty / $totalPerHari);
+
+        // Hitung tglEnd TANPA Minggu
+        $tglStartObj = Carbon::parse($tglStart);
+        $tglEnd = clone $tglStartObj;
+        $workDays = 0;
+
+        while ($workDays < $hariProduksi) {
+            if ($tglEnd->dayOfWeek !== Carbon::SUNDAY) {
+                $workDays++;
+            }
+            if ($workDays < $hariProduksi) {
+                $tglEnd->addDay();
+            }
+        }
+
+        $tglEndFormatted = $tglEnd->toDateString();
+
+        try {
+            foreach ($mesinCodes as $mesinCode) {
+                DB::connection('sqlsrv')->statement('EXEC sp_insert_schedule_forcast ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?', [
+                    $recUser,
+                    $mesinCode,
+                    $demandCode,
+                    $itemCode,
+                    $stdRajut,
+                    $qty,
+                    $tglStart,
+                    $tglEndFormatted,
+                    $tglDelivery,
+                    $status,
+                    $userDept
+                ]);
+            }
+
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
         }
     }
 
