@@ -16,17 +16,6 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule)
     {
         // $schedule->command('inspire')->hourly();
-        $schedule->command('files:copy-multimedia')
-             ->everyMinute()
-             ->before(function () {
-                 Log::channel('file_copy')->info('Starting scheduled file copy process');
-             })
-             ->onSuccess(function () {
-                 Log::channel('file_copy')->info('File copy completed successfully');
-             })
-             ->onFailure(function () {
-                 Log::channel('file_copy')->error('File copy process failed');
-             });
     }
 
     /**
