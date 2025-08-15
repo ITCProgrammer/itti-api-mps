@@ -9,71 +9,11 @@ use Carbon\Carbon;
 
 class MpsController extends Controller
 {
-    // public function mesin()
-    // {
-    //     $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
-    //     return response()->json([
-    //         'status' => true,
-    //         'message' => 'Succes',
-    //         'dataMesin' => $dataMesin,
-    //     ]);
-    // }
-
-    // public function index()
-        // {
-        //     $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
-
-        //     $dataDB2 = DB::connection('DB2')->select("
-        //         SELECT
-        //             KDMC,
-        //             PRODUCTIONDEMANDCODE,
-        //             STATUSMESIN,
-        //             TGL_START,
-        //             TGLDELIVERY,
-        //             ESTIMASI_SELESAI,
-        //             SUBCODE01,
-        //             SUBCODE02,
-        //             SUBCODE03,
-        //             SUBCODE04
-        //         FROM ITXTEMP_SCHEDULE_KNT
-        //     ");
-
-        //     return response()->json([
-        //         'status' => true,
-        //         'message' => 'Succes',
-        //         'dataMesin' => $dataMesin,
-        //         'dataNow' => $dataDB2,
-        //         'test' => 'test'
-        //     ]);
-    // }
-
     public function index()
     {
         $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
-
-        $dataDB2 = DB::connection('DB2')->select("
-            SELECT
-                KDMC,
-                PRODUCTIONDEMANDCODE,
-                STATUSMESIN,
-                TGL_START,
-                TGLMULAI,
-                TGLDELIVERY,
-                ESTIMASI_SELESAI,
-                SUBCODE01,
-                SUBCODE02,
-                SUBCODE03,
-                SUBCODE04,
-                QTY_SISA,
-                STANDAR_RAJUT,
-                QTY_ORDER
-            FROM ITXTEMP_SCHEDULE_KNT
-            WHERE ESTIMASI_SELESAI IS NOT NULL
-            ORDER BY 
-                KDMC,
-                CASE WHEN TGLMULAI IS NULL THEN 1 ELSE 0 END,
-                TGLMULAI ASC
-        ");
+        $dataDB2 = DB::connection('sqlsrv')->select('EXEC sp_get_schedule');
+        $dataFor = DB::connection('sqlsrv')->select('EXEC sp_get_schedule_knt');
 
         // Group berdasarkan mesin
         $grouped = [];
@@ -159,6 +99,7 @@ class MpsController extends Controller
             'message' => 'Success',
             'dataMesin' => $dataMesin,
             'dataNow' => $finalData,
+            'dataFor' => $dataFor,
         ]);
     }
 
@@ -420,6 +361,30 @@ class MpsController extends Controller
         ]);
     }
 
+    public function loadSplittForecast(Request $request)
+    {
+        $itemCode     = $request->input('itemCode');
+        $demandMesin    = $request->input('demandMesin');
+        $demandQty      = $request->input('demandQty');
+        $demandDeliv    = $request->input('demandDeliv');
+        
+       try {
+            $data = DB::connection('sqlsrv')->select('EXEC sp_get_schedule_forcast_splitt ?, ?, ?, ?', [
+                $itemCode,
+                $demandMesin,
+                $demandQty, 
+                $demandDeliv
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'data' => $data ?? []
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
     public function loadStatusMesin(Request $request)
     {
         $demand = $request->input('demand');
@@ -577,14 +542,6 @@ class MpsController extends Controller
 
         $dataMesin = DB::connection('DB2')->select($query, $demand);
 
-        // foreach ($dataMesin as &$row) {
-        //     foreach (['qty_order', 'qty_sisa', 'stdrajut'] as $field) {
-        //         if (isset($row->$field)) {
-        //             $row->$field = rtrim(rtrim(number_format((float)$row->$field, 6, '.', ''), '0'), '.');
-        //         }
-        //     }
-        // }
-
         return response()->json([
             'status' => true,
             'message' => 'Success',
@@ -654,6 +611,35 @@ class MpsController extends Controller
             return response()->json(['success' => true]);
         } catch (\Exception $e) {
             DB::connection('DB2')->rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    public function saveSplittForecast(Request $request)
+    {
+        $itemCode    = $request->input('itemCode');
+        $projectCode = $request->input('projectCode');
+        $demandMesin = $request->input('demandMesin');
+        $demandDeliv = $request->input('demandDeliv');
+        $qtyForecast = $request->input('qtyForecast');
+        $qtyProject  = $request->input('qtyProject');
+        $recUser     = $request->input('name');
+        $userDept    = $request->input('dept');
+
+        try {
+            DB::connection('sqlsrv')->statement('EXEC sp_insert_schedule_forcast_splitt ?, ?, ?, ?, ?, ?, ?, ?', [
+                $recUser,
+                $userDept,
+                $itemCode,
+                $projectCode,
+                $qtyForecast, 
+                $qtyProject,
+                $demandMesin,
+                $demandDeliv
+            ]);
+
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()]);
         }
     }
@@ -823,6 +809,18 @@ class MpsController extends Controller
             'status' => true,
             'message' => 'Success',
             'dataMesin' => $finalData
+        ]);
+    }
+
+    public function mesinByItemCode(Request $request)
+    {
+        $itemCode = $request->input('itemCode');
+        // Ambil data mesin dari SP
+        $schedules = DB::connection('sqlsrv')->select('EXEC sp_get_schedule_by_item_code ?', [$itemCode]);
+
+        return response()->json([
+            'item_code' => $itemCode,
+            'schedules' => $schedules,
         ]);
     }
 

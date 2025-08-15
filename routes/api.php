@@ -13,11 +13,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/profile', function (Request $request) {return $request->user();});
 
     Route::get('/getMesin', [MpsController::class, 'mesin']);
+    Route::get('/getMesinByItemCode', [MpsController::class, 'mesinByItemCode']);
     Route::get('/getMesinData', [MpsController::class, 'index']);
     Route::get('/getPoAndFor', [MpsController::class, 'loadPoAndFor']);
     Route::get('/getMesinByPo', [MpsController::class, 'loadMesinByPo']);
+    Route::get('/getSplittForecast', [MpsController::class, 'loadSplittForecast']);
     Route::post('/postStatusMesin', [MpsController::class, 'loadStatusMesin']);
     Route::post('/postSchedule', [MpsController::class, 'saveScheduleMesin']);
+    Route::post('/postSplittForecast', [MpsController::class, 'saveSplittForecast']);
     Route::post('/postScheduleForcast', [MpsController::class, 'saveScheduleForcast']);
     Route::post('/deleteSchedule', [MpsController::class, 'deleteScheduleMesin']);
 
