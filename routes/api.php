@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MpsController;
 use App\Http\Controllers\SchedulePlanController;
+use App\Http\Controllers\ForecastController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -30,6 +31,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/getDetailData/{item_code}', [MpsController::class, 'getDetailData']);
     Route::get('/getSearchData/{item_code}', [MpsController::class, 'getSearchData']);
 
+    Route::get('/forecast', [ForecastController::class, 'getForecastData']);
 
     Route::prefix('schedule-plan')->name('schedule.plan.')->group(function () {
         Route::get('/', [SchedulePlanController::class, 'index'])->name('index');

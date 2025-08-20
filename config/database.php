@@ -249,6 +249,39 @@ return [
             // + (defined('PDO::I5_ATTR_DBC_CURLIB') ? [PDO::I5_ATTR_DBC_CURLIB => ''] : [])
         ],
 
+        'mysql_gdb' => [
+            'driver' => 'mysql',
+            'url' => env('DATABASE_URL'),
+            'host' => env('DB_HOST_GDB', '127.0.0.1'),
+            'port' => env('DB_PORT_GDB', '3306'),
+            'database' => env('DB_DATABASE_GDB', 'forge'),
+            'username' => env('DB_USERNAME_GDB', 'forge'),
+            'password' => env('DB_PASSWORD_GDB', ''),
+            'unix_socket' => env('DB_SOCKET', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
+        'sqlsrv_knt' => [
+            'driver' => 'sqlsrv',
+            'url' => env('DATABASE_URL'),
+            'host' => env('DB_HOST_SQL_KNT', 'localhost'),
+            'port' => env('DB_PORT_SQL_KNT', '1433'),
+            'database' => env('DB_DATABASE_SQL_KNT', 'forge'),
+            'username' => env('DB_USERNAME_SQL_KNT', 'forge'),
+            'password' => env('DB_PASSWORD_SQL_KNT', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+        ],
+
     ],
 
     /*

@@ -9,20 +9,27 @@ use Carbon\Carbon;
 
 class MpsController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $filterType = $request->get('data_filter', 'day');
+
         $dataMesin = DB::connection('sqlsrv')->select('EXEC sp_get_mesin');
         $dataDB2 = DB::connection('sqlsrv')->select('EXEC sp_get_schedule');
         $dataFor = DB::connection('sqlsrv')->select('EXEC sp_get_schedule_knt');
 
-        // Group berdasarkan mesin
+        $today = new DateTime();
+
+        if ($filterType === 'week') {
+            $startDate = (clone $today)->modify('monday this week')->setTime(0, 0, 0);
+            $endDate   = (clone $startDate)->modify('+6 days')->setTime(23, 59, 59);
+        } else {
+            $startDate = (clone $today)->setTime(0, 0, 0);
+            $endDate   = (clone $today)->setTime(23, 59, 59);
+        }
+
         $grouped = [];
         foreach ($dataDB2 as $row) {
             $kdmc = $row->kdmc;
-            if (!isset($grouped[$kdmc])) {
-                $grouped[$kdmc] = [];
-            }
-
             $grouped[$kdmc][] = $row;
         }
 
@@ -51,12 +58,54 @@ class MpsController extends Controller
             
                 $lastEstimasi = clone $est;
             
-                $finalData[] = (object)[
+                // ✅ Filter sesuai range tanggal
+                if ($start <= $endDate && $est >= $startDate) {
+                    // Kalau mode week → geser start & end supaya pas ke minggu yang sedang difilter
+                    if ($filterType === 'week') {
+                        if ($start < $startDate) $start = clone $startDate;
+                        if ($est > $endDate) $est = clone $endDate;
+                    }
+                
+                    $finalData[] = (object)[
+                        'kdmc' => $row->kdmc,
+                        'productiondemandcode' => $row->productiondemandcode,
+                        'statusmesin' => $row->statusmesin,
+                        'tgl_start' => $filterType === 'week' 
+                            ? 'Week ' . $start->format('W') . ' ' . $start->format('m-Y')
+                            : $start->format('Y-m-d'),
+                        'estimasi_selesai' => $filterType === 'week' 
+                            ? 'Week ' . $est->format('W') . ' ' . $est->format('m-Y')
+                            : $est->format('Y-m-d'),
+                        'tgl_delivery' => $row->tgldelivery,
+                        'tgl_mulai' => $row->tglmulai,
+                        'subcode01' => $row->subcode01,
+                        'subcode02' => $row->subcode02,
+                        'subcode03' => $row->subcode03,
+                        'subcode04' => $row->subcode04,
+                        'qty_sisa' => number_format((float)$row->qty_sisa, 2, '.', ''),
+                        'standar_rajut' => number_format((float)$row->standar_rajut, 2, '.', ''),
+                        'qty_order' => number_format((float)$row->qty_order, 2, '.', ''),
+                    ];
+                }
+            }
+        }
+
+        $finalDataFor = [];
+        foreach ($dataFor as $row) {
+            $tglStart = $row->tgl_start ? new DateTime($row->tgl_start) : null;
+            $tglEnd   = $row->estimasi_selesai ? new DateTime($row->estimasi_selesai) : null;
+        
+            if ($tglStart && $tglEnd) {
+                $finalDataFor[] = (object)[
                     'kdmc' => $row->kdmc,
                     'productiondemandcode' => $row->productiondemandcode,
                     'statusmesin' => $row->statusmesin,
-                    'tgl_start' => $start->format('Y-m-d'),
-                    'estimasi_selesai' => $est->format('Y-m-d'),
+                    'tgl_start' => $filterType === 'week'
+                        ? 'Week ' . $tglStart->format('W') . ' ' . $tglStart->format('m-Y')
+                        : $tglStart->format('Y-m-d'),
+                    'estimasi_selesai' => $filterType === 'week'
+                        ? 'Week ' . $tglEnd->format('W') . ' ' . $tglEnd->format('m-Y')
+                        : $tglEnd->format('Y-m-d'),
                     'tgl_delivery' => $row->tgldelivery,
                     'tgl_mulai' => $row->tglmulai,
                     'subcode01' => $row->subcode01,
@@ -64,10 +113,9 @@ class MpsController extends Controller
                     'subcode03' => $row->subcode03,
                     'subcode04' => $row->subcode04,
                     'qty_sisa' => number_format((float)$row->qty_sisa, 2, '.', ''),
-                    // 'qty_sisa' => $row->qty_sisa,
-                    // 'standar_rajut' => $row->standar_rajut,
                     'standar_rajut' => number_format((float)$row->standar_rajut, 2, '.', ''),
                     'qty_order' => number_format((float)$row->qty_order, 2, '.', ''),
+                    'splitDemands' => json_decode($row->splitDemands, true) ?? []
                 ];
             }
         }
@@ -75,31 +123,49 @@ class MpsController extends Controller
         foreach ($dataMesin as $mesin) {
             $spDetail = DB::connection('sqlsrv')->select('EXEC sp_get_mesin_detail ?', [$mesin->mesin_code]);
             foreach ($spDetail as $row) {
-                $finalData[] = (object)[
-                    'kdmc' => $row->kdmc,
-	                'productiondemandcode' => $row->productiondemandcode,
-	                'statusmesin' => $row->statusmesin,
-                    'tgl_start' => $row->tgl_start ? date('Y-m-d', strtotime($row->tgl_start)) : null,
-                    'estimasi_selesai' => $row->estimasi_selesai ? date('Y-m-d', strtotime($row->estimasi_selesai)) : null,
-                    'tgl_delivery' => $row->tgldelivery,
-                    'tgl_mulai' => $row->tglmulai,
-                    'subcode01' => $row->subcode01,
-                    'subcode02' => $row->subcode02,
-                    'subcode03' => $row->subcode03,
-                    'subcode04' => $row->subcode04,
-                    'qty_sisa' => number_format((float)$row->qty_sisa, 2, '.', ''),
-                    'qty_sisa' => $row->qty_sisa,
-                    'standar_rajut' => number_format((float)$row->standar_rajut, 2, '.', ''),
-                    'qty_order' => number_format((float)$row->qty_order, 2, '.', '')
-                ];
+                $tglStart = $row->tgl_start ? new DateTime($row->tgl_start) : null;
+                $tglEnd   = $row->estimasi_selesai ? new DateTime($row->estimasi_selesai) : null;
+
+                if ($tglStart && $tglEnd && $tglStart <= $endDate && $tglEnd >= $startDate) {
+                    if ($filterType === 'week') {
+                        if ($tglStart < $startDate) $tglStart = clone $startDate;
+                        if ($tglEnd > $endDate) $tglEnd = clone $endDate;
+                    }
+
+                    $finalData[] = (object)[
+                        'kdmc' => $row->kdmc,
+                        'productiondemandcode' => $row->productiondemandcode,
+                        'statusmesin' => $row->statusmesin,
+                        'tgl_start' => $tglStart 
+                            ? ($filterType === 'week' 
+                                ? 'Week ' . $tglStart->format('W') . ' ' . $tglStart->format('m-Y') 
+                                : $tglStart->format('Y-m-d'))
+                            : null,
+                        'estimasi_selesai' => $tglEnd
+                            ? ($filterType === 'week'
+                                ? 'Week ' . $tglEnd->format('W') . ' ' . $tglEnd->format('m-Y')
+                                : $tglEnd->format('Y-m-d'))
+                            : null,
+                        'tgl_delivery' => $row->tgldelivery,
+                        'tgl_mulai' => $row->tglmulai,
+                        'subcode01' => $row->subcode01,
+                        'subcode02' => $row->subcode02,
+                        'subcode03' => $row->subcode03,
+                        'subcode04' => $row->subcode04,
+                        'qty_sisa' => number_format((float)$row->qty_sisa, 2, '.', ''),
+                        'standar_rajut' => number_format((float)$row->standar_rajut, 2, '.', ''),
+                        'qty_order' => number_format((float)$row->qty_order, 2, '.', '')
+                    ];
+                }
             }
         }
+
         return response()->json([
             'status' => true,
             'message' => 'Success',
             'dataMesin' => $dataMesin,
             'dataNow' => $finalData,
-            'dataFor' => $dataFor,
+            'dataFor' => $finalDataFor,
         ]);
     }
 
@@ -942,7 +1008,8 @@ class MpsController extends Controller
         ]);
     }
 
-    public function getDetailData($itemCode){
+    public function getDetailData(Request $request, $itemCode)
+    {
         $parts = explode('-', $itemCode);
         if (count($parts) < 3) {
             return response()->json([
@@ -952,14 +1019,19 @@ class MpsController extends Controller
 
         list($Code1, $Code2, $Code3) = $parts;
 
-        $schedules = DB::connection('sqlsrv')->select('EXEC sp_get_schedule_by_item_code ?', [$itemCode]);
+        $filterType = $request->get('data_filter', 'day');
+
+        $schedules = DB::connection('sqlsrv')->select(
+            'EXEC sp_get_schedule_by_item_code ?', 
+            [$itemCode]
+        );
 
         $dataDB2 = DB::connection('DB2')->select("
             SELECT
-            	a2.VALUEDATE AS RMP_REQ_TO,
-            	SUM(p.USERPRIMARYQUANTITY) AS QTY_TOTAL
+                a2.VALUEDATE AS RMP_REQ_TO,
+                SUM(p.USERPRIMARYQUANTITY) AS QTY_TOTAL
             FROM
-            	PRODUCTIONDEMAND p
+                PRODUCTIONDEMAND p
             LEFT JOIN ADSTORAGE a ON a.UNIQUEID = p.ABSUNIQUEID AND a.FIELDNAME = 'RMPReqDate'
             LEFT JOIN ADSTORAGE a2 ON a2.UNIQUEID = p.ABSUNIQUEID AND a2.FIELDNAME = 'RMPGreigeReqDateTo'
             LEFT JOIN ADSTORAGE a3 ON a3.UNIQUEID = p.ABSUNIQUEID AND a3.FIELDNAME = 'OriginalPDCode'
@@ -969,40 +1041,41 @@ class MpsController extends Controller
                 AND p.SUBCODE04 = ?
                 AND p.ITEMTYPEAFICODE = 'KGF'
                 AND a2.VALUEDATE > CAST(CURRENT DATE AS DATE)
-            	AND a3.VALUESTRING IS NULL
+                AND a3.VALUESTRING IS NULL
             GROUP BY
-            	a2.VALUEDATE
+                a2.VALUEDATE
         ", [$Code1, $Code2, $Code3]);
 
         $dataStock = DB::connection('DB2')->select("
             SELECT
-            	SUM(BASEPRIMARYQUANTITYUNIT) as Stock
+                SUM(BASEPRIMARYQUANTITYUNIT) as Stock
             FROM
-            	BALANCE b
+                BALANCE b
             WHERE
-            	DECOSUBCODE02 = ?
-            	AND b.DECOSUBCODE03 = ?
-            	AND b.DECOSUBCODE04 = ?
-            	AND b.LOGICALWAREHOUSECODE IN ('M021', 'M502')",
-        [$Code1, $Code2, $Code3]);
+                DECOSUBCODE02 = ?
+                AND b.DECOSUBCODE03 = ?
+                AND b.DECOSUBCODE04 = ?
+                AND b.LOGICALWAREHOUSECODE IN ('M021', 'M502')
+        ", [$Code1, $Code2, $Code3]);
 
         $forecast = DB::connection('sqlsrv')->select(
-            'EXEC sp_get_forcast_by_subcode ?',
+            'EXEC sp_get_forcast_by_subcode ?', 
             [$itemCode]
         );
 
         $stockPlann = DB::connection('sqlsrv')->select(
-            'EXEC sp_get_qtyplann_by_item_code ?',
+            'EXEC sp_get_qtyplann_by_item_code ?', 
             [$itemCode]
         );
 
         return response()->json([
-            'item_code' => $itemCode,
-            'schedules' => $schedules,
-            'db2_data' => $dataDB2,
-            'stock_data' => $dataStock,
-            'forecast' => $forecast,
-            'stockPlann' => $stockPlann,
+            'item_code'   => $itemCode,
+            'filter_type' => $filterType, // 🔹 ikut dikembalikan biar jelas
+            'schedules'   => $schedules,
+            'db2_data'    => $dataDB2,
+            'stock_data'  => $dataStock,
+            'forecast'    => $forecast,
+            'stockPlann'  => $stockPlann,
         ]);
     }
 
